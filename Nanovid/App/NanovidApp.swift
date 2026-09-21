@@ -1,0 +1,61 @@
+import SwiftUI
+
+@main
+struct NanovidApp: App {
+    init() {
+        _ = SelfTest.runIfRequested()
+    }
+
+    @State private var store = EditorStore()
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView(store: store)
+                .frame(minWidth: 1100, minHeight: 700)
+        }
+        .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("新規プロジェクト") { store.newProject() }
+                    .keyboardShortcut("n")
+                Button("開く…") { store.openProject() }
+                    .keyboardShortcut("o")
+            }
+            CommandGroup(replacing: .saveItem) {
+                Button("保存") { store.save() }
+                    .keyboardShortcut("s")
+                Button("別名で保存…") { store.saveAs() }
+                    .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+            CommandGroup(replacing: .undoRedo) {
+                Button("取り消す") { store.undo() }
+                    .keyboardShortcut("z")
+                    .disabled(!store.canUndo)
+                Button("やり直す") { store.redo() }
+                    .keyboardShortcut("z", modifiers: [.command, .shift])
+                    .disabled(!store.canRedo)
+            }
+            // メニューのショートカットはすべて修飾キー付きにしてある。
+            // 修飾なしの space / S / 矢印 / delete は、文字入力を邪魔しないよう
+            // タイムラインにフォーカスがあるときだけ効く（TimelineView の onKeyPress）。
+            CommandMenu("編集操作") {
+                Button("再生 / 一時停止") { store.togglePlay() }
+                    .keyboardShortcut("k", modifiers: .command)
+                Button("分割") { store.splitAtPlayhead() }
+                    .keyboardShortcut("b", modifiers: .command)
+                Button("複製") { store.duplicateSelection() }
+                    .keyboardShortcut("d")
+                Button("削除") { store.deleteSelection() }
+                    .keyboardShortcut(.delete, modifiers: .command)
+                Divider()
+                Button("1 フレーム戻る") { store.step(frames: -1) }
+                    .keyboardShortcut(.leftArrow, modifiers: .command)
+                Button("1 フレーム進む") { store.step(frames: 1) }
+                    .keyboardShortcut(.rightArrow, modifiers: .command)
+                Divider()
+                Button("映像トラックを追加") { store.addTrack(kind: .video) }
+                Button("音声トラックを追加") { store.addTrack(kind: .audio) }
+            }
+        }
+    }
+}

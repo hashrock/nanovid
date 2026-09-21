@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# 書き出した動画や録音（プロジェクトの隣に出るもの）
+*.mp4
+*.mov
+*.wav
+*.mp3
+Recordings/
+
+# ただし合成の土台に使う同梱素材は追跡する
+!Nanovid/Resources/blank.mp4

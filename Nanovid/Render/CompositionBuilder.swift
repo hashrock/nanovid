@@ -1,0 +1,257 @@
+import AVFoundation
+import CoreGraphics
+import Foundation
+import ImageIO
+
+struct BuiltComposition {
+    let composition: AVMutableComposition
+    let videoComposition: AVMutableVideoComposition
+    let audioMix: AVMutableAudioMix?
+    let duration: Double
+}
+
+enum BuildError: LocalizedError {
+    case emptyProject
+    case assetMissing(String)
+    case unreadable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .emptyProject: return "タイムラインに何も置かれていません。"
+        case .assetMissing(let name): return "素材が見つかりません: \(name)"
+        case .unreadable(let name): return "素材を読み込めません: \(name)"
+        }
+    }
+}
+
+/// 使い回す合成トラックと、そこに詰め終わっている末尾時刻。
+private struct TrackSlot {
+    let track: AVMutableCompositionTrack
+    var end: Double
+}
+
+/// 区間分割前の中間表現。
+private struct PendingLayer {
+    var source: RenderLayer.Source
+    var start: Double
+    var duration: Double
+    var transform: Transform2D
+    var opacity: Double
+    var fade: Fade
+    /// 重なり順。小さいほど背面。
+    var z: Int
+}
+
+/// Project（編集モデル）を AVFoundation の再生・書き出し用オブジェクトへ変換する。
+/// 元ファイルを参照するだけで、中間ファイルは一切作らない。
+enum CompositionBuilder {
+
+    static func build(project: Project, baseURL: URL?) async throws -> BuiltComposition {
+        let canvas = project.canvas
+        let canvasSize = canvas.size
+        let composition = AVMutableComposition()
+
+        var pending: [PendingLayer] = []
+        // 合成トラックは使い回す。クリップごとに新規作成するとデコーダが際限なく増える。
+        var videoPool: [TrackSlot] = []
+        var audioPool: [TrackSlot] = []
+        var audioParams: [CMPersistentTrackID: AVMutableAudioMixInputParameters] = [:]
+        var z = 0
+
+        for track in project.tracks where !track.isLocked {
+            for clip in track.clips.sorted(by: { $0.start < $1.start }) {
+                z += 1
+                switch clip.content {
+                case .text(let instance):
+                    guard track.kind == .video, !track.isHidden,
+                          let template = project.template(instance.templateID) else { continue }
+                    let props = instance.resolvedProps(in: template)
+                    guard let raster = TextRasterizer.shared.rasterize(
+                        template: template, props: props, canvas: canvasSize
+                    ) else { continue }
+                    pending.append(PendingLayer(
+                        source: .text(image: raster.image, rect: raster.rect),
+                        start: clip.start, duration: clip.duration,
+                        transform: clip.transform, opacity: clip.opacity, fade: clip.fade, z: z
+                    ))
+
+                case .media(let assetID, let sourceStart):
+                    guard let asset = project.asset(assetID) else {
+                        throw BuildError.assetMissing("(不明な素材)")
+                    }
+                    let url = asset.url(relativeTo: baseURL)
+                    guard FileManager.default.fileExists(atPath: url.path) else {
+                        throw BuildError.assetMissing(asset.displayName)
+                    }
+
+                    if asset.kind == .image {
+                        guard track.kind == .video, !track.isHidden else { continue }
+                        guard let cg = loadImage(url) else { throw BuildError.unreadable(asset.displayName) }
+                        let rect = aspectFitRect(CGSize(width: cg.width, height: cg.height), in: canvasSize)
+                        pending.append(PendingLayer(
+                            source: .text(image: cg, rect: rect),
+                            start: clip.start, duration: clip.duration,
+                            transform: clip.transform, opacity: clip.opacity, fade: clip.fade, z: z
+                        ))
+                        continue
+                    }
+
+                    let av = AssetCache.shared.asset(for: url)
+                    let sourceRange = CMTimeRange(start: sourceStart.cmTime, duration: clip.duration.cmTime)
+
+                    // 映像
+                    if track.kind == .video, !track.isHidden,
+                       let vTrack = try await av.loadTracks(withMediaType: .video).first,
+                       let compTrack = claimTrack(in: &videoPool, mediaType: .video,
+                                                  composition: composition, clip: clip) {
+                        try compTrack.insertTimeRange(sourceRange, of: vTrack, at: clip.start.cmTime)
+                        let preferred = try await vTrack.load(.preferredTransform)
+                        pending.append(PendingLayer(
+                            source: .media(trackID: compTrack.trackID, preferredTransform: preferred),
+                            start: clip.start, duration: clip.duration,
+                            transform: clip.transform, opacity: clip.opacity, fade: clip.fade, z: z
+                        ))
+                    }
+
+                    // 音声（映像トラックに置いたクリップの音もそのまま鳴らす）
+                    if !track.isMuted, clip.volume > 0,
+                       let aTrack = try await av.loadTracks(withMediaType: .audio).first,
+                       let compTrack = claimTrack(in: &audioPool, mediaType: .audio,
+                                                  composition: composition, clip: clip) {
+                        try compTrack.insertTimeRange(sourceRange, of: aTrack, at: clip.start.cmTime)
+                        let params = audioParams[compTrack.trackID]
+                            ?? AVMutableAudioMixInputParameters(track: compTrack)
+                        applyVolume(clip: clip, to: params)
+                        audioParams[compTrack.trackID] = params
+                    }
+                }
+            }
+        }
+
+        let timelineDuration = max(project.duration, composition.duration.secondsOrZero)
+        guard timelineDuration > 0 else { throw BuildError.emptyProject }
+
+        // 映像パイプラインを回すための土台。空のトラックではフレームが供給されず
+        // 出力が途切れるので、同梱の極小ブランク素材をタイムライン全域に敷く。
+        // レイヤーとしては合成しないので見た目には現れない。
+        try await insertSpacer(into: composition, duration: timelineDuration)
+
+        // MARK: 区間分割（レイヤー構成が変わる時刻で切る）
+        var cuts: Set<Double> = [0, timelineDuration]
+        for l in pending {
+            cuts.insert(max(0, min(timelineDuration, l.start)))
+            cuts.insert(max(0, min(timelineDuration, l.start + l.duration)))
+        }
+        let boundaries = cuts.sorted()
+
+        var instructions: [NanovidInstruction] = []
+        for i in 0..<max(0, boundaries.count - 1) {
+            let from = boundaries[i]
+            let to = boundaries[i + 1]
+            guard to - from > 1e-6 else { continue }
+            let mid = (from + to) / 2
+            let active = pending
+                .filter { $0.start <= mid && mid < $0.start + $0.duration }
+                .sorted { $0.z < $1.z }
+                .map {
+                    RenderLayer(source: $0.source, clipStart: $0.start, clipDuration: $0.duration,
+                                transform: $0.transform, opacity: $0.opacity, fade: $0.fade)
+                }
+            instructions.append(NanovidInstruction(
+                timeRange: CMTimeRange(start: from.cmTime, end: to.cmTime),
+                layers: active, backgroundColor: canvas.backgroundColor, canvasSize: canvasSize))
+        }
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.customVideoCompositorClass = NanovidCompositor.self
+        videoComposition.renderSize = canvasSize
+        videoComposition.renderScale = 1
+        videoComposition.frameDuration = CMTime(value: 1, timescale: CMTimeScale(canvas.fps))
+        videoComposition.instructions = instructions
+
+        var mix: AVMutableAudioMix?
+        if !audioParams.isEmpty {
+            let m = AVMutableAudioMix()
+            m.inputParameters = Array(audioParams.values)
+            mix = m
+        }
+
+        return BuiltComposition(composition: composition, videoComposition: videoComposition,
+                                audioMix: mix, duration: timelineDuration)
+    }
+
+    // MARK: - 土台トラック
+
+    private static let blankAsset: AVURLAsset? = {
+        guard let url = Bundle.main.url(forResource: "blank", withExtension: "mp4") else { return nil }
+        return AVURLAsset(url: url)
+    }()
+
+    /// タイムライン全域をブランク素材で埋める。素材が尽きたら先頭から繰り返す。
+    private static func insertSpacer(into composition: AVMutableComposition, duration: Double) async throws {
+        guard let blank = blankAsset,
+              let source = try await blank.loadTracks(withMediaType: .video).first,
+              let spacer = composition.addMutableTrack(
+                  withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
+        else { return }
+
+        let unit = try await blank.load(.duration)
+        guard unit.isNumeric, unit.seconds > 0 else { return }
+        let total = duration.cmTime
+        var cursor = CMTime.zero
+        while cursor < total {
+            let remaining = total - cursor
+            let step = min(unit, remaining)
+            try spacer.insertTimeRange(CMTimeRange(start: .zero, duration: step), of: source, at: cursor)
+            cursor = cursor + step
+        }
+    }
+
+    // MARK: - 補助
+
+    /// 空いている合成トラックを探し、無ければ新設する。
+    private static func claimTrack(in pool: inout [TrackSlot],
+                                   mediaType: AVMediaType,
+                                   composition: AVMutableComposition,
+                                   clip: Clip) -> AVMutableCompositionTrack? {
+        if let index = pool.firstIndex(where: { $0.end <= clip.start + 1e-6 }) {
+            pool[index].end = clip.end
+            return pool[index].track
+        }
+        guard let made = composition.addMutableTrack(
+            withMediaType: mediaType, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
+        pool.append(TrackSlot(track: made, end: clip.end))
+        return made
+    }
+
+    /// クリップ単位の音量とフェードを AVAudioMix のパラメータへ積む。
+    private static func applyVolume(clip: Clip, to p: AVMutableAudioMixInputParameters) {
+        let v = Float(clip.volume)
+        p.setVolume(v, at: clip.start.cmTime)
+
+        if clip.fade.inDuration > 0 {
+            p.setVolumeRamp(fromStartVolume: 0, toEndVolume: v,
+                            timeRange: CMTimeRange(start: clip.start.cmTime,
+                                                   duration: clip.fade.inDuration.cmTime))
+        }
+        if clip.fade.outDuration > 0 {
+            let s = clip.end - clip.fade.outDuration
+            p.setVolumeRamp(fromStartVolume: v, toEndVolume: 0,
+                            timeRange: CMTimeRange(start: s.cmTime,
+                                                   duration: clip.fade.outDuration.cmTime))
+        }
+    }
+
+    private static func loadImage(_ url: URL) -> CGImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
+    }
+
+    /// キャンバス座標（左上原点）での、アスペクト比を保った収まり矩形。
+    private static func aspectFitRect(_ size: CGSize, in canvas: CGSize) -> CGRect {
+        guard size.width > 0, size.height > 0 else { return CGRect(origin: .zero, size: canvas) }
+        let s = min(canvas.width / size.width, canvas.height / size.height)
+        let w = size.width * s, h = size.height * s
+        return CGRect(x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, width: w, height: h)
+    }
+}
