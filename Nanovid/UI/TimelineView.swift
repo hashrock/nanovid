@@ -254,13 +254,12 @@ struct TimelineView: View {
     private var laneArea: some View {
         GeometryReader { geo in
             // レーンの中身はビューポートより広いので、各段に実寸の幅を与えて左端に固定する。
-            // maxWidth: .infinity だけだと VStack が内容幅まで広がり、目盛りが中央寄せされてしまう。
-            VStack(alignment: .leading, spacing: 0) {
-                // 目盛りは縦スクロールしない。横だけ追従させる。
-                RulerView(store: store, scrollX: offsetX)
-                    .frame(width: geo.size.width, height: Self.rulerHeight, alignment: .topLeading)
-                    .clipped()
-
+            // maxWidth: .infinity だけだと内容幅まで広がり、目盛りが中央寄せされてしまう。
+            //
+            // 目盛りは ZStack の後ろに置いて最前面にする。縦にスクロールするとレーンが
+            // 目盛りの位置まで上がってくるが、clipped() は描画を隠すだけでクリックは
+            // 奪ったままになるため、前面に無いと目盛りが押せなくなる。
+            ZStack(alignment: .topLeading) {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(lanes) { track in
                         laneView(track)
@@ -271,6 +270,11 @@ struct TimelineView: View {
                        height: max(0, geo.size.height - Self.rulerHeight),
                        alignment: .topLeading)
                 .clipped()
+                .padding(.top, Self.rulerHeight)
+
+                RulerView(store: store, scrollX: offsetX)
+                    .frame(width: geo.size.width, height: Self.rulerHeight, alignment: .topLeading)
+                    .clipped()
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .overlay(alignment: .topLeading) { extractOverlay }
