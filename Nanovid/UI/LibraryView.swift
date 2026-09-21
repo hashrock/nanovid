@@ -36,28 +36,21 @@ struct LibraryView: View {
 
     private var assetList: some View {
         VStack(spacing: 0) {
-            if store.project.assets.isEmpty {
-                ContentUnavailableView {
-                    Label("素材がありません", systemImage: "tray")
-                } description: {
-                    Text("動画・音声・画像をドラッグするか、下のボタンから読み込みます。")
-                        .font(.caption)
+            // 空のときは何も出さない。狭い幅で不格好に折り返すうえ、
+            // 下の「読み込む」とドロップで十分わかる。
+            List {
+                ForEach(store.project.assets) { asset in
+                    AssetRow(asset: asset, fps: store.project.canvas.fps)
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) { place(asset) }
+                        .contextMenu {
+                            Button("再生ヘッドの位置に置く") { place(asset) }
+                            Divider()
+                            Button("素材を取り除く", role: .destructive) { remove(asset) }
+                        }
                 }
-            } else {
-                List {
-                    ForEach(store.project.assets) { asset in
-                        AssetRow(asset: asset, fps: store.project.canvas.fps)
-                            .contentShape(Rectangle())
-                            .onTapGesture(count: 2) { place(asset) }
-                            .contextMenu {
-                                Button("再生ヘッドの位置に置く") { place(asset) }
-                                Divider()
-                                Button("素材を取り除く", role: .destructive) { remove(asset) }
-                            }
-                    }
-                }
-                .listStyle(.inset)
             }
+            .listStyle(.inset)
 
             Divider()
             HStack {
