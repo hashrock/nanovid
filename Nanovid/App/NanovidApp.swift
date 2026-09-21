@@ -50,28 +50,43 @@ struct NanovidApp: App {
             // 修飾なしの space / S / 矢印 / delete は、文字入力を邪魔しないよう
             // タイムラインにフォーカスがあるときだけ効く（TimelineView の onKeyPress）。
             CommandMenu("編集操作") {
+                // ショートカットは付けない。メニューに ⌘C を載せると常に有効に
+                // なってしまい、文字入力中のコピー＆ペーストを奪う。
+                // タイムラインにフォーカスがあるときだけ効くよう、
+                // TimelineView の onKeyPress で受けている。
+                Button("クリップをコピー (⌘C)") { store.copySelection() }
+                    .disabled(store.selectedClipIDs.isEmpty)
+                Button("クリップを切り取り (⌘X)") { store.cutSelection() }
+                    .disabled(store.selectedClipIDs.isEmpty)
+                // クリップボードの中身は観測できないので、有効・無効は付けない。
+                // 中身が無ければ何も起きない。
+                Button("クリップを貼り付け (⌘V)") { store.paste() }
+                Divider()
                 Button("再生 / 一時停止") { store.togglePlay() }
                     .keyboardShortcut("k", modifiers: .command)
                 Button("分割") { store.splitAtPlayhead() }
                     .keyboardShortcut("b", modifiers: .command)
                 Button("複製") { store.duplicateSelection() }
                     .keyboardShortcut("d")
-                Button("削除") { store.deleteSelection() }
-                    .keyboardShortcut(.delete, modifiers: .command)
+                // ここから下はショートカットを付けない。⌘A（全選択）、
+                // ⌘←→（行頭・行末）、⌘Delete（行頭まで削除）は、いずれも
+                // 標準のテキスト編集が使うキー。メニューに載せると常に有効に
+                // なり、字幕の入力欄から奪ってしまう。
+                // タイムラインにフォーカスがあるときだけ効くよう onKeyPress で受ける。
+                Button("削除 (Delete)") { store.deleteSelection() }
+                    .disabled(store.selectedClipIDs.isEmpty)
                 Button("削除して詰める") { store.rippleDeleteSelection() }
                     .keyboardShortcut(.delete, modifiers: [.command, .option])
+                    .disabled(store.selectedClipIDs.isEmpty)
                 Button("隙間を詰める") { store.packSelection() }
                     .disabled(store.selectedClipIDs.count < 2)
                 Divider()
-                Button("すべて選択") { store.selectAll() }
-                    .keyboardShortcut("a")
-                Button("選択を解除") { store.selectedClipIDs = [] }
-                    .keyboardShortcut("a", modifiers: [.command, .shift])
+                Button("すべて選択 (⌘A)") { store.selectAll() }
+                Button("選択を解除 (⇧⌘A)") { store.selectedClipIDs = [] }
+                    .disabled(store.selectedClipIDs.isEmpty)
                 Divider()
-                Button("1 フレーム戻る") { store.step(frames: -1) }
-                    .keyboardShortcut(.leftArrow, modifiers: .command)
-                Button("1 フレーム進む") { store.step(frames: 1) }
-                    .keyboardShortcut(.rightArrow, modifiers: .command)
+                Button("1 フレーム戻る (←)") { store.step(frames: -1) }
+                Button("1 フレーム進む (→)") { store.step(frames: 1) }
                 Divider()
                 Button("映像トラックを追加") { store.addTrack(kind: .video) }
                 Button("音声トラックを追加") { store.addTrack(kind: .audio) }

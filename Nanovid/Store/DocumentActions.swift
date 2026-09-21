@@ -12,6 +12,7 @@ extension EditorStore {
         selectedClipIDs = []
         currentTime = 0
         hasUnsavedChanges = false
+        resetHistory()
         AssetCache.shared.removeAll()
         TextRasterizer.shared.invalidateAll()
     }
@@ -34,6 +35,7 @@ extension EditorStore {
             selectedClipIDs = []
             currentTime = 0
             hasUnsavedChanges = false
+            resetHistory()
             TextRasterizer.shared.invalidateAll()
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {

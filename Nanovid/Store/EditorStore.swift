@@ -28,6 +28,11 @@ final class EditorStore {
     var buildError: String?
     var isBuilding = false
 
+    // 取り消しの可否。スタック自体は観測の対象外なので、
+    // メニューの有効・無効が追従するようここに写しておく。
+    private(set) var canUndo = false
+    private(set) var canRedo = false
+
     @ObservationIgnored let player = AVPlayer()
     @ObservationIgnored private var timeObserver: Any?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
@@ -177,6 +182,7 @@ final class EditorStore {
         undoStack.append(project)
         if undoStack.count > undoLimit { undoStack.removeFirst() }
         redoStack.removeAll()
+        refreshHistoryFlags()
     }
 
     /// checkpoint とミューテーションをまとめて行う。
@@ -197,18 +203,31 @@ final class EditorStore {
         project = copy
     }
 
-    var canUndo: Bool { !undoStack.isEmpty }
-    var canRedo: Bool { !redoStack.isEmpty }
+    /// 取り消しの履歴を捨てる。別のプロジェクトを開いたあとに
+    /// 前のプロジェクトへ戻れてしまわないようにする。
+    func resetHistory() {
+        undoStack.removeAll()
+        redoStack.removeAll()
+        lastCoalesceKey = nil
+        refreshHistoryFlags()
+    }
 
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(project)
         project = previous
+        refreshHistoryFlags()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(project)
         project = next
+        refreshHistoryFlags()
+    }
+
+    private func refreshHistoryFlags() {
+        canUndo = !undoStack.isEmpty
+        canRedo = !redoStack.isEmpty
     }
 }

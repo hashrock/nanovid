@@ -227,6 +227,40 @@ struct EditingTests {
         #expect(store.project.tracks[0].clips.count == 2)
     }
 
+    @Test("別のプロジェクトを開くと取り消しの履歴は捨てられる")
+    func historyIsClearedOnOpen() throws {
+        let (store, _, clipID) = makeStore()
+        store.selectedClipIDs = [clipID]
+        store.currentTime = 2
+        store.splitAtPlayhead()
+        #expect(store.canUndo)
+
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nanovid-history-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let url = dir.appendingPathComponent("other.nanovid")
+        try ProjectIO.save(Project.starter(), to: url)
+
+        store.open(url: url)
+        #expect(!store.canUndo, "前のプロジェクトへ戻れてしまってはいけない")
+        #expect(!store.canRedo)
+    }
+
+    @Test("新規プロジェクトでも取り消しの履歴は捨てられる")
+    func historyIsClearedOnNew() {
+        let (store, _, clipID) = makeStore()
+        store.selectedClipIDs = [clipID]
+        store.currentTime = 2
+        store.splitAtPlayhead()
+        #expect(store.canUndo)
+
+        // 未保存の確認ダイアログを出さずに素通りさせる（テストで画面を止めないため）。
+        store.hasUnsavedChanges = false
+        store.newProject()
+        #expect(!store.canUndo)
+    }
+
     @Test("文字入力のような連続編集は 1 つの undo にまとまる")
     func coalescedEditsCollapseIntoOneUndo() {
         var project = Project.starter()

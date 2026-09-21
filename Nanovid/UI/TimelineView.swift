@@ -153,6 +153,10 @@ struct TimelineView: View {
     /// 選択中のクリップに対する操作。まとめて選んだあとの行き先をここに集める。
     private var selectionMenu: some View {
         Menu {
+            Button("コピー") { store.copySelection() }
+            Button("切り取り") { store.cutSelection() }
+            Button("貼り付け") { store.paste() }
+            Divider()
             Button("削除して詰める") { store.rippleDeleteSelection() }
             Button("隙間を詰める") { store.packSelection() }
                 .disabled(store.selectedClipIDs.count < 2)
@@ -787,6 +791,28 @@ struct TimelineView: View {
     /// 修飾キーなしのキーは、タイムラインにフォーカスがあるときだけ効かせる。
     /// こうしておけば一括編集やインスペクタでの文字入力を奪わない。
     private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        // ⌘C / ⌘X / ⌘V はメニューに載せない。載せると常に有効になり、
+        // 文字入力中のコピー＆ペーストまで奪ってしまう。ここで受ければ
+        // タイムラインにフォーカスがあるときだけ効く。
+        if press.modifiers.contains(.command) {
+            switch press.characters.lowercased() {
+            case "c": store.copySelection(); return .handled
+            case "x": store.cutSelection(); return .handled
+            case "v": store.paste(); return .handled
+            case "a":
+                if press.modifiers.contains(.shift) {
+                    store.selectedClipIDs = []
+                } else {
+                    store.selectAll()
+                }
+                return .handled
+            default: return .ignored
+            }
+        }
+        guard !press.modifiers.contains(.option), !press.modifiers.contains(.control) else {
+            return .ignored
+        }
+
         switch press.key {
         case .space:
             store.togglePlay(); return .handled
@@ -796,11 +822,21 @@ struct TimelineView: View {
             store.step(frames: press.modifiers.contains(.shift) ? 10 : 1); return .handled
         case .delete, .deleteForward:
             store.deleteSelection(); return .handled
+        case .clear:
+            store.deleteSelection(); return .handled
         case .escape:
             store.selectedClipIDs = []; return .handled
         default:
             break
         }
+        // Delete キーは環境によって届く文字が違う（U+0008 / U+007F）。
+        // KeyEquivalent での一致に漏れることがあるので、文字でも拾っておく。
+        if let scalar = press.characters.unicodeScalars.first,
+           scalar.value == 8 || scalar.value == 127 {
+            store.deleteSelection()
+            return .handled
+        }
+
         switch press.characters.lowercased() {
         case "s": store.splitAtPlayhead(); return .handled
         case "d": store.duplicateSelection(); return .handled
