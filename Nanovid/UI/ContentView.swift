@@ -27,14 +27,17 @@ struct ContentView: View {
         GeometryReader { geo in
             let bottom = resolvedBottomHeight(in: geo.size.height)
             VStack(spacing: 0) {
+                // 念のため、はみ出しても隣のペインへ漏れないようにしておく。
                 topPane
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .clipped()
                 PaneDivider.Horizontal(
                     bottomHeight: $bottomHeight,
                     range: bottomMinHeight...max(bottomMinHeight,
                                                  geo.size.height - topMinHeight))
                 bottomPane
-                    .frame(height: bottom)
+                    .frame(height: bottom, alignment: .top)
+                    .clipped()
             }
         }
         .toolbar { toolbarContent }

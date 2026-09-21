@@ -228,15 +228,21 @@ struct TimelineView: View {
     private var headerColumn: some View {
         VStack(spacing: 0) {
             Color.clear.frame(width: Self.headerWidth, height: Self.rulerHeight)
-            VStack(spacing: 0) {
-                ForEach(lanes) { track in
-                    TrackHeaderView(store: store, track: track)
-                        .frame(width: Self.headerWidth, height: Self.laneHeight)
-                        .padding(.bottom, Self.laneGap)
+            // GeometryReader で包んで、中身の高さに引きずられないようにする。
+            // 並べたヘッダは固定高なので、そのままだとこの列が縮まず、
+            // タイムライン全体の最小高さがトラック数ぶんに固定されてしまう。
+            // 枠が足りないとはみ出して、上のトランスポートに重なる。
+            GeometryReader { _ in
+                VStack(spacing: 0) {
+                    ForEach(lanes) { track in
+                        TrackHeaderView(store: store, track: track)
+                            .frame(width: Self.headerWidth, height: Self.laneHeight)
+                            .padding(.bottom, Self.laneGap)
+                    }
                 }
+                .offset(y: -offsetY)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
-            .offset(y: -offsetY)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
             .clipped()
         }
         .frame(width: Self.headerWidth)
