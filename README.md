@@ -8,6 +8,19 @@ Mac ネイティブの軽量な動画編集ツール。
 - 入力: MP4 / MOV / WAV / MP3 / 画像　出力: MP4 (H.264 / HEVC + AAC)
 - マイク録音あり・画面録画なし
 
+## ダウンロード
+
+**[Nanovid 0.1.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.1.0/Nanovid-0.1.0.zip)**
+（[リリース一覧](https://github.com/hashrock/nanovid/releases/latest)）
+
+zip を展開して `Nanovid.app` をアプリケーションフォルダへ。
+Developer ID 署名と公証済みなので、初回起動の警告は出ない。
+
+| | |
+|---|---|
+| 動作環境 | macOS 15 以降 |
+| 字幕の自動生成 | macOS 26 以降（`SpeechAnalyzer` を使うため）|
+
 ## ビルドと実行
 
 ```sh
