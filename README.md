@@ -64,6 +64,26 @@ macOS 26 は新形式（Icon Composer の `.icon`）でないアイコンを、�
 そのぶん macOS 15 で開くと台座が付かず、グリフだけが浮いて見える。ちゃんと
 両対応させるなら Icon Composer で `.icon` を作るのが正道。
 
+## 配布用のビルド
+
+```sh
+Scripts/release.sh
+```
+
+Release 構成でビルドし、Developer ID で署名して `dist/Nanovid-<版>.zip` を作る。
+署名の内容とエンタイトルメントを出したうえで、デバッグ用の `get-task-allow` が
+混ざっていれば止まる（混ざったままだと公証で弾かれる）。
+
+Hardened Runtime を有効にしているので、マイクへのアクセスには明示のエンタイトルメントが
+要る（`Nanovid.entitlements`）。これが無いと、署名したビルドだけ録音が動かなくなる。
+
+公証（notarization）は Apple への送信になるので、スクリプトではやらない。
+手順はスクリプトの最後に出る。公証しないまま配ると、受け取った側で
+「開発元を確認できません」の警告が出る。
+
+Debug はアドホック署名のまま。毎回 Developer ID で署名すると遅いのと、
+デバッガを繋ぐのに `get-task-allow` が要るため。
+
 ## スクリプト
 
 `Scripts/` にある補助スクリプト。どちらも macOS の許可が要る。
@@ -74,6 +94,9 @@ Scripts/run.sh [--demo|--release|--no-build] [プロジェクト]
 
 # アプリアイコンを Design/appicon.svg から作り直す
 Scripts/make-appicon.sh
+
+# 配布用に署名してビルドする
+Scripts/release.sh
 
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png

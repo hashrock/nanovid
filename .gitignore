@@ -23,3 +23,6 @@ Recordings/
 
 # ただし合成の土台に使う同梱素材は追跡する
 !Nanovid/Resources/blank.mp4
+
+# 配布物
+dist/
