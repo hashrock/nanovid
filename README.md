@@ -35,7 +35,7 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 すでに起動している nanovid は終了させてから開き直すので、作り直したビルドが
 確実に立ち上がる。
 
-ユニットテスト（Swift Testing、172 件）:
+ユニットテスト（Swift Testing、173 件）:
 
 ```sh
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
@@ -51,7 +51,11 @@ xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは �
 Nanovid --open path/to/project.nanovid
 Nanovid --write-demo <出力ディレクトリ> [音声]  # デモを作って終了（音声を渡すと載せる）
 Nanovid --transcribe <音声ファイル> [言語]     # 書き起こしだけ試して終了
+Nanovid --inspect <プロジェクト> [時刻]       # 組み上げた合成の中身を調べて終了
 ```
+
+`--inspect` はプレビューが映らないときの切り分け用。素材が見つかるか、合成トラックが
+いくつできたか、命令列が途切れていないか、その時刻を 1 枚描けるかを出す。
 
 描画から書き出しまでを GUI なしで通すテスト:
 
@@ -181,6 +185,11 @@ AVPlayer（プレビュー） / AVAssetWriter（書き出し）
 ```
 
 プレビューと書き出しが同じコンポジタを通るので、見た目は必ず一致する。
+
+区間の境界は、Double のままではなく **CMTime へ落としてから重複を除く**。同じ瞬間でも
+計算の経路によって下位ビットがずれるため（例: フレーム境界に丸めた `88/30` と、
+ひとつ前のクリップの終わり `2.1 + 25/30` は 4.4e-16 違う）。Double のまま扱って
+「ほぼ 0 の区間」を捨てると命令列に隙間が空き、AVFoundation は何も描かなくなる。
 
 ### blank.mp4 について
 

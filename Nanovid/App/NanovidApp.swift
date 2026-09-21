@@ -6,6 +6,7 @@ struct NanovidApp: App {
         _ = SelfTest.runIfRequested()
         _ = SelfTest.writeDemoIfRequested()
         _ = SelfTest.transcribeIfRequested()
+        _ = SelfTest.inspectIfRequested()
     }
 
     /// `Nanovid --open <ファイル>` で起動時にプロジェクトを開く。

@@ -36,6 +36,45 @@ struct CompositionBuilderTests {
         #expect(abs(end - built.duration) < 1e-6)
     }
 
+    @Test("端が浮動小数の誤差でずれていても命令が途切れない")
+    func instructionsStayContiguousDespiteFloatingPointDrift() async throws {
+        // 自動生成した字幕を並べると実際に起きる並び。フレーム境界に丸めた開始位置
+        // (88/30 = 2.933333333333333) と、ひとつ前のクリップの終わり
+        // (2.1 + 25/30 = 2.9333333333333336) が 4.4e-16 だけ食い違う。
+        // 以前はこの差を「ほぼ 0 の区間」として飛ばしており、命令列に隙間が空いて
+        // AVFoundation が何も描かなくなっていた（プレビューが真っ黒）。
+        #expect(2.1 + 25.0 / 30 != 88.0 / 30,
+                "この 2 つが同値だと、この試験は不具合を捕まえられない")
+
+        var project = Project.starter()
+        let template = project.textTemplates[0]
+        func text(_ start: Double, _ duration: Double) -> Clip {
+            Clip(start: start, duration: duration,
+                 content: .text(TextInstance(templateID: template.id,
+                                             props: ["text": .string("あ")])))
+        }
+        project.tracks[1].clips = [
+            text(0, 2.1),
+            text(2.1, 25.0 / 30),        // 終わり 2.9333333333333336
+            text(88.0 / 30, 1.0),        // 始まり 2.933333333333333
+            text(118.0 / 30, 23.0 / 30),
+        ]
+
+        let built = try await CompositionBuilder.build(project: project, baseURL: nil)
+        let instructions = built.videoComposition.instructions
+        try #require(!instructions.isEmpty)
+
+        #expect(instructions[0].timeRange.start == .zero)
+        for i in 1..<instructions.count {
+            #expect(instructions[i].timeRange.start == instructions[i - 1].timeRange.end,
+                    "区間 \(i) の前に隙間がある")
+        }
+        #expect(instructions.allSatisfy { $0.timeRange.duration > .zero },
+                "長さ 0 の命令は作らない")
+        #expect(instructions[instructions.count - 1].timeRange.end == built.composition.duration,
+                "終端まで覆う")
+    }
+
     @Test("何も置かれていない区間にはレイヤーが無い")
     func gapHasNoLayers() async throws {
         let built = try await CompositionBuilder.build(project: textOnlyProject(), baseURL: nil)

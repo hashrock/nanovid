@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import Foundation
 
@@ -97,6 +98,88 @@ enum SelfTest {
                     print(String(format: "  %@ (%.1f秒) %@",
                                  Format.timecode(line.start, fps: 30),
                                  line.duration, line.text))
+                }
+            } catch {
+                failure = error
+            }
+            sem.signal()
+        }
+        sem.wait()
+        if let failure {
+            FileHandle.standardError.write("FAIL: \(failure.localizedDescription)\n".data(using: .utf8)!)
+            exit(1)
+        }
+        exit(0)
+    }
+
+    /// `Nanovid --inspect <プロジェクト> [時刻]` で、組み上げた合成の中身を調べて終了する。
+    /// プレビューが映らないときに、どこで止まっているのかを切り分けるため。
+    static func inspectIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let idx = args.firstIndex(of: "--inspect"), args.count > idx + 1 else { return false }
+        let url = URL(fileURLWithPath: args[idx + 1])
+        let at = args.count > idx + 2 ? (Double(args[idx + 2]) ?? 0) : 0
+
+        let sem = DispatchSemaphore(value: 0)
+        var failure: Error?
+        Task.detached {
+            do {
+                let project = try ProjectIO.load(from: url)
+                let base = url.deletingLastPathComponent()
+                print("プロジェクト: \(project.name)  \(project.canvas.width)x\(project.canvas.height) / \(project.canvas.fps)fps")
+                print("尺: \(String(format: "%.2f", project.duration)) 秒")
+
+                for asset in project.assets {
+                    let resolved = asset.url(relativeTo: base)
+                    let exists = FileManager.default.fileExists(atPath: resolved.path)
+                    print("  素材 \(exists ? "○" : "×") \(asset.kind.label) \(asset.displayName)")
+                }
+
+                let built = try await CompositionBuilder.build(project: project, baseURL: base)
+                let videoTracks = built.composition.tracks(withMediaType: .video)
+                let audioTracks = built.composition.tracks(withMediaType: .audio)
+                print("合成: 映像トラック \(videoTracks.count) / 音声トラック \(audioTracks.count)")
+                for track in videoTracks {
+                    let segments = track.segments.filter { !$0.isEmpty }
+                    print("  映像 id=\(track.trackID) 尺=\(String(format: "%.2f", track.timeRange.duration.secondsOrZero)) 区間=\(segments.count)")
+                }
+
+                let instructions = built.videoComposition.instructions
+                print("命令: \(instructions.count) 個")
+                var gap = false
+                for i in 1..<max(1, instructions.count) {
+                    if instructions[i].timeRange.start != instructions[i - 1].timeRange.end { gap = true }
+                }
+                print("  連続: \(gap ? "途切れあり" : "問題なし")")
+
+                if let hit = instructions.compactMap({ $0 as? NanovidInstruction })
+                    .first(where: { $0.timeRange.containsTime(at.cmTime) }) {
+                    print("  \(String(format: "%.2f", at)) 秒の命令: レイヤー \(hit.layers.count) / 必要トラック \(hit.requiredSourceTrackIDs?.count ?? 0)")
+                    for layer in hit.layers {
+                        switch layer.source {
+                        case .media(let id, _): print("    映像 trackID=\(id)")
+                        case .text(let image, let rect):
+                            print("    テキスト \(image.width)x\(image.height) at \(Int(rect.minX)),\(Int(rect.minY))")
+                        }
+                    }
+                }
+
+                // プレビューと同じ経路で 1 枚だけ描かせてみる。
+                let generator = AVAssetImageGenerator(asset: built.composition)
+                generator.videoComposition = built.videoComposition
+                generator.requestedTimeToleranceBefore = .zero
+                generator.requestedTimeToleranceAfter = .zero
+                generator.appliesPreferredTrackTransform = false
+                do {
+                    let (image, actual) = try await generator.image(at: at.cmTime)
+                    let out = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("nanovid-inspect.png")
+                    try NSBitmapImageRep(cgImage: image)
+                        .representation(using: .png, properties: [:])!.write(to: out)
+                    print("描画: 成功 \(image.width)x\(image.height) (実時刻 \(String(format: "%.2f", actual.secondsOrZero)) 秒)")
+                    print("  \(out.path)")
+                } catch {
+                    print("描画: 失敗 \(error.localizedDescription)")
                 }
             } catch {
                 failure = error

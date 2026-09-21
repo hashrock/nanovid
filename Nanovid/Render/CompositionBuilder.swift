@@ -131,25 +131,36 @@ enum CompositionBuilder {
         let timelineDuration = max(project.duration, composition.duration.secondsOrZero)
         guard timelineDuration > 0 else { throw BuildError.emptyProject }
 
+        // 素材を入れ終わった時点での終端。Double へ落とすと端が丸められることがあるので、
+        // 合成そのものの尺と突き合わせて長いほうを採る。
+        let end = max(timelineDuration.cmTime, composition.duration)
+
         // 映像パイプラインを回すための土台。空のトラックではフレームが供給されず
         // 出力が途切れるので、同梱の極小ブランク素材をタイムライン全域に敷く。
         // レイヤーとしては合成しないので見た目には現れない。
-        try await insertSpacer(into: composition, duration: timelineDuration)
+        try await insertSpacer(into: composition, upTo: end)
 
         // MARK: 区間分割（レイヤー構成が変わる時刻で切る）
-        var cuts: Set<Double> = [0, timelineDuration]
-        for l in pending {
-            cuts.insert(max(0, min(timelineDuration, l.start)))
-            cuts.insert(max(0, min(timelineDuration, l.start + l.duration)))
+        //
+        // 境界は先に CMTime へ落としてから重複を除く。Double のまま集めると、
+        // 同じ瞬間でも計算の経路によって下位ビットがずれ（例: 2.933333333333333 と
+        // 2.9333333333333336）、長さがほぼ 0 の区間ができる。それを飛ばすと
+        // 命令列に隙間が空き、AVFoundation は何も描かなくなる（プレビューが真っ黒になる）。
+        var times: [CMTime] = [.zero, end]
+        for layer in pending {
+            times.append(clamped(layer.start, to: end))
+            times.append(clamped(layer.start + layer.duration, to: end))
         }
-        let boundaries = cuts.sorted()
+        var boundaries: [CMTime] = []
+        for time in times.sorted(by: <) where boundaries.last != time {
+            boundaries.append(time)
+        }
 
+        // 連続する境界から順に作るので、隙間も長さ 0 も生まれない。
         var instructions: [NanovidInstruction] = []
         for i in 0..<max(0, boundaries.count - 1) {
-            let from = boundaries[i]
-            let to = boundaries[i + 1]
-            guard to - from > 1e-6 else { continue }
-            let mid = (from + to) / 2
+            let range = CMTimeRange(start: boundaries[i], end: boundaries[i + 1])
+            let mid = (boundaries[i].secondsOrZero + boundaries[i + 1].secondsOrZero) / 2
             let active = pending
                 .filter { $0.start <= mid && mid < $0.start + $0.duration }
                 .sorted { $0.z < $1.z }
@@ -158,8 +169,8 @@ enum CompositionBuilder {
                                 transform: $0.transform, opacity: $0.opacity, fade: $0.fade)
                 }
             instructions.append(NanovidInstruction(
-                timeRange: CMTimeRange(start: from.cmTime, end: to.cmTime),
-                layers: active, backgroundColor: canvas.backgroundColor, canvasSize: canvasSize))
+                timeRange: range, layers: active,
+                backgroundColor: canvas.backgroundColor, canvasSize: canvasSize))
         }
 
         let videoComposition = AVMutableVideoComposition()
@@ -177,7 +188,13 @@ enum CompositionBuilder {
         }
 
         return BuiltComposition(composition: composition, videoComposition: videoComposition,
-                                audioMix: mix, duration: timelineDuration)
+                                audioMix: mix, duration: end.secondsOrZero)
+    }
+
+    /// 0 以上 end 以下に収めて CMTime にする。
+    private static func clamped(_ seconds: Double, to end: CMTime) -> CMTime {
+        let time = max(0, seconds).cmTime
+        return time > end ? end : time
     }
 
     // MARK: - 土台トラック
@@ -188,7 +205,7 @@ enum CompositionBuilder {
     }()
 
     /// タイムライン全域をブランク素材で埋める。素材が尽きたら先頭から繰り返す。
-    private static func insertSpacer(into composition: AVMutableComposition, duration: Double) async throws {
+    private static func insertSpacer(into composition: AVMutableComposition, upTo total: CMTime) async throws {
         guard let blank = blankAsset,
               let source = try await blank.loadTracks(withMediaType: .video).first,
               let spacer = composition.addMutableTrack(
@@ -196,8 +213,7 @@ enum CompositionBuilder {
         else { return }
 
         let unit = try await blank.load(.duration)
-        guard unit.isNumeric, unit.seconds > 0 else { return }
-        let total = duration.cmTime
+        guard unit.isNumeric, unit.seconds > 0, total > .zero else { return }
         var cursor = CMTime.zero
         while cursor < total {
             let remaining = total - cursor
