@@ -11,6 +11,8 @@ struct TemplateEditorView: View {
     @State private var selectedNodeID: UUID?
     /// プレビュー確認用の一時的な props（保存はされない）。
     @State private var previewProps: [String: PropValue] = [:]
+    /// props の表の高さ。下段に置いたので上下に調整できる。
+    @State private var propsHeight: CGFloat = 175
 
     var body: some View {
         Group {
@@ -21,8 +23,10 @@ struct TemplateEditorView: View {
             }
         }
         // シートを広げられるようにする。列の幅もユーザーが調整できる。
-        .frame(minWidth: 1000, idealWidth: 1280, maxWidth: .infinity,
-               minHeight: 680, idealHeight: 880, maxHeight: .infinity)
+        // シートは idealWidth ではなく minWidth の幅で開く。プレビューが
+        // まともな大きさになる幅を最小として置いておく。
+        .frame(minWidth: 1100, idealWidth: 1280, maxWidth: .infinity,
+               minHeight: 660, idealHeight: 900, maxHeight: .infinity)
         .onAppear {
             draft = store.project.template(templateID)
             selectedNodeID = draft?.nodes.last?.id
@@ -31,27 +35,40 @@ struct TemplateEditorView: View {
     }
 
     private func content(_ template: TextTemplate) -> some View {
-        VStack(spacing: 0) {
-            header(template)
-            Divider()
-            HSplitView {
-                nodeColumn(template)
-                    .frame(minWidth: 170, idealWidth: 210, maxWidth: 340)
-                VSplitView {
+        GeometryReader { geo in
+            // props の表は横に長い。中央の列に入れるとプレビューの幅を押しのけて
+            // はみ出すので、下段に回して横幅いっぱいを使わせる。
+            VStack(spacing: 0) {
+                header(template)
+                Divider()
+                HSplitView {
+                    // 上限を絞る。HSplitView は空きを分け合うので、上限が緩いと
+                    // 脇の列が広がってプレビューが痩せる。
+                    nodeColumn(template)
+                        .frame(minWidth: 160, idealWidth: 190, maxWidth: 240)
                     TemplatePreview(template: template,
                                     props: previewProps,
                                     canvas: store.project.canvas)
-                        .frame(minWidth: 360, minHeight: 240, idealHeight: 460)
-                    propsColumn(template)
-                        .frame(minHeight: 150, idealHeight: 240)
+                        .frame(minWidth: 320)
+                    inspectorColumn(template)
+                        .frame(minWidth: 280, idealWidth: 310, maxWidth: 380)
                 }
-                .frame(minWidth: 380)
-                inspectorColumn(template)
-                    .frame(minWidth: 290, idealWidth: 320, maxWidth: 460)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                PaneDivider.Horizontal(
+                    bottomHeight: $propsHeight,
+                    range: 120...max(120, geo.size.height - 320))
+                propsColumn(template)
+                    .frame(height: resolvedPropsHeight(in: geo.size.height))
+                Divider()
+                footer
             }
-            Divider()
-            footer
         }
+    }
+
+    /// 窓が小さいときでも上段が潰れないように収める。
+    private func resolvedPropsHeight(in total: CGFloat) -> CGFloat {
+        min(max(propsHeight, 120), max(120, total - 320))
     }
 
     // MARK: - ヘッダ
@@ -164,11 +181,11 @@ struct TemplateEditorView: View {
             TextField("key", text: bindingProp(def.id, \.key))
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.caption, design: .monospaced))
-                .frame(width: 96)
+                .frame(minWidth: 70, idealWidth: 96, maxWidth: 140)
             TextField("表示名", text: bindingProp(def.id, \.label))
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
-                .frame(width: 110)
+                .frame(minWidth: 80, idealWidth: 120, maxWidth: 180)
             Picker("", selection: Binding(
                 get: { def.type },
                 set: { newType in
@@ -186,7 +203,7 @@ struct TemplateEditorView: View {
 
             defaultValueEditor(def)
 
-            Spacer()
+            Spacer(minLength: 0)
             Button {
                 draft?.props.removeAll { $0.id == def.id }
             } label: { Image(systemName: "minus.circle") }
@@ -207,7 +224,7 @@ struct TemplateEditorView: View {
             ))
             .textFieldStyle(.roundedBorder)
             .font(.caption)
-            .frame(width: 150)
+            .frame(minWidth: 120, idealWidth: 220, maxWidth: 360)
         case .color:
             ColorPicker("", selection: Binding(
                 get: { Color(def.defaultValue.colorValue ?? .white) },
@@ -353,11 +370,12 @@ struct TemplatePreview: View {
                 .overlay(Rectangle().strokeBorder(Color.white.opacity(0.1)))
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
     }
 
     private func fit(in size: CGSize) -> CGSize {
-        let padding: Double = 20
+        let padding: Double = 12
         let w = max(1, size.width - padding * 2)
         let h = max(1, size.height - padding * 2)
         let aspect = canvas.aspectRatio
