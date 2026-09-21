@@ -53,7 +53,7 @@ struct TextClipsPane: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            BottomTabPicker(selection: $bottomTab, textCount: store.project.allTextClips.count)
+            BottomTabPicker(selection: $bottomTab)
 
             Divider().frame(height: 16)
 

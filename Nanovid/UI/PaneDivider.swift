@@ -92,12 +92,12 @@ enum BottomTab: String, CaseIterable, Identifiable {
 /// 下段の見出しに置くタブ切り替え。タイムライン側と字幕側で同じものを使う。
 struct BottomTabPicker: View {
     @Binding var selection: BottomTab
-    let textCount: Int
 
     var body: some View {
         Picker("", selection: $selection) {
-            Text(BottomTab.timeline.label).tag(BottomTab.timeline)
-            Text(textCount > 0 ? "字幕 \(textCount)" : "字幕").tag(BottomTab.text)
+            ForEach(BottomTab.allCases) { tab in
+                Text(tab.label).tag(tab)
+            }
         }
         .pickerStyle(.segmented)
         .labelsHidden()

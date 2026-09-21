@@ -97,7 +97,7 @@ struct TimelineView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
-            BottomTabPicker(selection: $bottomTab, textCount: store.project.allTextClips.count)
+            BottomTabPicker(selection: $bottomTab)
 
             Divider().frame(height: 16)
 
