@@ -85,7 +85,8 @@ final class TextRasterizer {
 
         // 2) 実際に描かれる範囲＋影/縁取りの余裕をとって、描画バッファのサイズを決める。
         //    折り返し幅ではなく行の実測幅で囲むので、短い字幕ではバッファがぐっと小さくなる。
-        let margin = canvas.height * 0.03
+        let maxStroke = layouts.values.map(\.strokePoints).max() ?? 0
+        let margin = max(canvas.height * 0.03, maxStroke * 1.5)
         var bounds = layouts.values.map(\.inkRect).reduce(CGRect.null) { $0.union($1) }
         bounds = bounds.insetBy(dx: -margin, dy: -margin).intersection(CGRect(origin: .zero, size: canvas))
         guard !bounds.isNull, bounds.width >= 1, bounds.height >= 1 else { return nil }
@@ -136,6 +137,10 @@ final class TextRasterizer {
         /// 描画バッファのサイズ決めと、背景板の追従に使う。
         var inkRect: CGRect
         var framesetter: CTFramesetter?
+        /// 縁取り用。塗りとは別パスで描く。
+        var strokeFramesetter: CTFramesetter?
+        /// 縁取りの実太さ(pt)。バッファの余白計算に使う。
+        var strokePoints: CGFloat = 0
     }
 
     private func measureText(node: TemplateNode, spec: TextNodeSpec,
@@ -143,7 +148,7 @@ final class TextRasterizer {
         let string = spec.text.resolve(props, defaults: [:])?.stringValue ?? ""
         guard !string.isEmpty else { return nil }
 
-        let attr = attributedString(spec, text: string, props: props, canvas: canvas)
+        let attr = attributedString(spec, text: string, props: props, canvas: canvas, pass: .fill)
         let fs = CTFramesetterCreateWithAttributedString(attr)
         let wrapWidth = node.frame.width * canvas.width
         var fitRange = CFRange()
@@ -155,7 +160,17 @@ final class TextRasterizer {
         // 描画用の枠は折り返し幅のまま（整列は枠内で行う）。高さだけ実測に合わせる。
         let rect = node.frame.rect(in: canvas, measuredHeight: ceil(suggested.height))
         let ink = Self.inkRect(in: rect, inkWidth: ceil(suggested.width), align: spec.align)
-        return NodeLayout(rect: rect, inkRect: ink, framesetter: fs)
+
+        var strokeFS: CTFramesetter?
+        var strokePoints: CGFloat = 0
+        if spec.strokeWidth > 0 {
+            let strokeAttr = attributedString(spec, text: string, props: props,
+                                              canvas: canvas, pass: .stroke)
+            strokeFS = CTFramesetterCreateWithAttributedString(strokeAttr)
+            strokePoints = spec.strokeWidth * spec.font.pointSize(in: canvas)
+        }
+        return NodeLayout(rect: rect, inkRect: ink, framesetter: fs,
+                          strokeFramesetter: strokeFS, strokePoints: strokePoints)
     }
 
     /// 整列を踏まえて、枠 rect の中で実際に文字が乗る範囲を求める。
@@ -199,21 +214,42 @@ final class TextRasterizer {
     private func drawText(_ spec: TextNodeSpec, in ctx: CGContext, layout: NodeLayout, rect: CGRect,
                           props: [String: PropValue], canvas: CGSize) {
         guard let fs = layout.framesetter else { return }
+        let path = CGPath(rect: rect, transform: nil)
 
-        if spec.shadowRadius > 0 {
+        func applyShadow() {
+            guard spec.shadowRadius > 0 else { return }
             let sc = spec.shadowColor.resolve(props, defaults: [:])?.colorValue ?? .black
             let off = CGSize(width: spec.shadowOffset.x * canvas.height,
                              height: -spec.shadowOffset.y * canvas.height)
             ctx.setShadow(offset: off, blur: spec.shadowRadius * canvas.height, color: sc.cgColor)
         }
 
-        let path = CGPath(rect: rect, transform: nil)
+        // 縁取りは「輪郭だけを描いてから塗りを重ねる」2 パスにする。
+        // CoreText の負の strokeWidth は輪郭が字の内側を削るので、太くすると字が痩せてしまう。
+        if let strokeFS = layout.strokeFramesetter {
+            ctx.saveGState()
+            ctx.setLineJoin(.round)
+            ctx.setLineCap(.round)
+            applyShadow()
+            let strokeFrame = CTFramesetterCreateFrame(strokeFS, CFRange(location: 0, length: 0), path, nil)
+            CTFrameDraw(strokeFrame, ctx)
+            ctx.restoreGState()
+        } else {
+            applyShadow()
+        }
+
         let frame = CTFramesetterCreateFrame(fs, CFRange(location: 0, length: 0), path, nil)
         CTFrameDraw(frame, ctx)
     }
 
+    private enum DrawPass {
+        case fill
+        case stroke
+    }
+
     private func attributedString(_ spec: TextNodeSpec, text: String,
-                                  props: [String: PropValue], canvas: CGSize) -> NSAttributedString {
+                                  props: [String: PropValue], canvas: CGSize,
+                                  pass: DrawPass) -> NSAttributedString {
         let size = spec.font.pointSize(in: canvas)
         let font: NSFont
         if !spec.font.name.isEmpty, let f = NSFont(name: spec.font.name, size: size) {
@@ -239,11 +275,13 @@ final class TextRasterizer {
             .foregroundColor: NSColor(cgColor: color.cgColor) ?? .white,
             .paragraphStyle: para,
         ]
-        if spec.strokeWidth > 0 {
+        if pass == .stroke {
             let sc = spec.strokeColor.resolve(props, defaults: [:])?.colorValue ?? .black
-            // 負値で「塗り＋縁取り」になる。
-            attrs[.strokeWidth] = -spec.strokeWidth * 100
+            // 正の値は「輪郭のみ」。フォントサイズに対する百分率で指定する。
+            // 輪郭の半分は塗りに隠れるので、見た目の太さぶん 2 倍にしておく。
+            attrs[.strokeWidth] = spec.strokeWidth * 200
             attrs[.strokeColor] = NSColor(cgColor: sc.cgColor) ?? .black
+            attrs[.foregroundColor] = NSColor(cgColor: sc.cgColor) ?? .black
         }
         return NSAttributedString(string: text, attributes: attrs)
     }

@@ -74,8 +74,7 @@ extension EditorStore {
         let clip = Clip(name: template.name,
                         start: project.canvas.snap(max(0, time)),
                         duration: project.canvas.snap(duration),
-                        content: .text(TextInstance(templateID: templateID)),
-                        fade: Fade(inDuration: 0.2, outDuration: 0.2))
+                        content: .text(TextInstance(templateID: templateID)))
         edit {
             $0.tracks[ti].clips.append(clip)
             $0.tracks[ti].sortClips()

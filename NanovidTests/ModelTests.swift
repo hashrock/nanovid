@@ -125,6 +125,53 @@ struct TextTemplateTests {
         #expect(abs(short.maxY / 1920 - 0.9) < 1e-9)
     }
 
+    @Test("同梱テンプレートが一通りそろっている")
+    func builtinTemplates() {
+        let names = Project.starter().textTemplates.map(\.name)
+        #expect(names.contains("字幕"))
+        #expect(names.contains("シンプル字幕"))
+        #expect(names.contains("テロップ（左下）"))
+        #expect(names.contains("タイトル"))
+        #expect(Set(names).count == names.count, "名前が重複している")
+    }
+
+    @Test("シンプル字幕は背景板を持たず縁取りで読ませる")
+    func plainSubtitleUsesStroke() {
+        let template = TextTemplate.plainSubtitle()
+        let hasRect = template.nodes.contains { if case .rect = $0.kind { return true }; return false }
+        #expect(!hasRect)
+
+        guard case .text(let spec) = template.nodes[0].kind else {
+            Issue.record("テキストノードであるべき")
+            return
+        }
+        #expect(spec.strokeWidth > 0)
+        #expect(spec.strokeColor.boundKey == "strokeColor")
+        #expect(template.props.contains { $0.key == "strokeColor" })
+    }
+
+    @Test("同梱テンプレートの props バインドが定義と食い違わない")
+    func builtinBindingsResolve() {
+        for template in Project.starter().textTemplates {
+            let keys = Set(template.props.map(\.key))
+            for node in template.nodes {
+                var refs: [ValueRef] = []
+                switch node.kind {
+                case .text(let spec):
+                    refs = [spec.text, spec.color, spec.strokeColor, spec.shadowColor]
+                case .rect(let spec):
+                    refs = [spec.fill]
+                }
+                for ref in refs {
+                    if let key = ref.boundKey {
+                        #expect(keys.contains(key),
+                                "\(template.name) の \(node.name) が未定義の props.\(key) を参照している")
+                    }
+                }
+            }
+        }
+    }
+
     @Test("テンプレートを使っているクリップを引ける")
     func findsClipsUsingTemplate() {
         var project = Project.starter()

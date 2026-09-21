@@ -139,6 +139,18 @@ struct EditingTests {
         #expect(abs(store.project.clip(clipID)!.start - 2.0) < 1e-9)
     }
 
+    @Test("テキストクリップの既定フェードは 0")
+    func textClipHasNoFadeByDefault() {
+        let (store, _, _) = makeStore()
+        let template = store.project.textTemplates[0]
+        let track = store.project.tracks.filter { $0.kind == .video }[1]
+        store.addTextClip(templateID: template.id, trackID: track.id, at: 0)
+
+        let clip = store.project.tracks.first { $0.id == track.id }?.clips.first
+        #expect(clip?.fade.inDuration == 0)
+        #expect(clip?.fade.outDuration == 0)
+    }
+
     @Test("undo で 1 操作ぶん戻る")
     func undoRestoresPreviousState() {
         let (store, _, clipID) = makeStore()

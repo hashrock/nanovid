@@ -171,7 +171,7 @@ struct Project: Codable, Hashable {
             Track(name: "テロップ", kind: .video),
             Track(name: "音声 1", kind: .audio),
         ]
-        p.textTemplates = [.subtitle(), .title()]
+        p.textTemplates = [.subtitle(), .plainSubtitle(), .lowerLeftNote(), .title()]
         return p
     }
 }

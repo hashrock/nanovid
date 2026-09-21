@@ -43,6 +43,73 @@ extension TextTemplate {
         )
     }
 
+    /// シンプル字幕：背景板なし。縁取りだけで背景から浮かせる。
+    static func plainSubtitle() -> TextTemplate {
+        let node = TemplateNode(
+            name: "本文",
+            frame: RelFrame(x: 0.5, y: 0.9, width: 0.88, height: 0.12, anchor: .bottom),
+            kind: .text(TextNodeSpec(
+                text: .prop("text"),
+                color: .prop("textColor"),
+                font: FontSpec(name: "", relativeSize: 0.058, weight: 0.56),
+                align: .center,
+                lineSpacing: 0.14,
+                strokeWidth: 0.09,
+                strokeColor: .prop("strokeColor"),
+                shadowRadius: 0.005,
+                shadowColor: .literal(.color(RGBAColor(r: 0, g: 0, b: 0, a: 0.5))),
+                shadowOffset: CGPoint(x: 0, y: 0.002)
+            ))
+        )
+        return TextTemplate(
+            name: "シンプル字幕",
+            nodes: [node],
+            props: [
+                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("ここに字幕")),
+                PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
+                PropDef(key: "strokeColor", label: "縁の色", type: .color, defaultValue: .color(.black)),
+            ]
+        )
+    }
+
+    /// テロップ：左下に小さく置く注釈。スクリーンキャストの補足向け。
+    static func lowerLeftNote() -> TextTemplate {
+        let textID = UUID()
+        let text = TemplateNode(
+            id: textID,
+            name: "本文",
+            frame: RelFrame(x: 0.05, y: 0.92, width: 0.55, height: 0.08, anchor: .bottomLeft),
+            kind: .text(TextNodeSpec(
+                text: .prop("text"),
+                color: .prop("textColor"),
+                font: FontSpec(name: "", relativeSize: 0.034, weight: 0.45),
+                align: .left,
+                lineSpacing: 0.12,
+                shadowRadius: 0.003
+            ))
+        )
+        let plate = TemplateNode(
+            name: "背景板",
+            frame: RelFrame(x: 0.05, y: 0.92, width: 0.55, height: 0.08, anchor: .bottomLeft),
+            kind: .rect(RectNodeSpec(
+                fill: .prop("plateColor"),
+                cornerRadius: 0.008,
+                fitToNodeID: textID,
+                padding: CGPoint(x: 0.016, y: 0.012)
+            ))
+        )
+        return TextTemplate(
+            name: "テロップ（左下）",
+            nodes: [plate, text],
+            props: [
+                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("補足メモ")),
+                PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
+                PropDef(key: "plateColor", label: "背景色", type: .color,
+                        defaultValue: .color(RGBAColor(hex: "#000000A6") ?? .black)),
+            ]
+        )
+    }
+
     /// タイトル：大見出し＋サブ。アクセントの帯付き。
     static func title() -> TextTemplate {
         let bar = TemplateNode(

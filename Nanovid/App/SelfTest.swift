@@ -97,8 +97,8 @@ enum SelfTest {
         p3.tracks[1].clips = [
             overlay,
             Clip(start: 1.2, duration: 0.6, content: .text(TextInstance(
-                templateID: p3.textTemplates[0].id,
-                props: ["text": .string("ギャップ中"), "plateColor": .color(.clear)]))),
+                templateID: p3.textTemplates[1].id,   // シンプル字幕（縁取り）
+                props: ["text": .string("縁取りのテスト Outline")]))),
         ]
 
         let gapped = dir.appendingPathComponent("03-gap-overlap.mp4")
