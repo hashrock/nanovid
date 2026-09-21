@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -8,9 +9,20 @@ struct TimelineView: View {
     static let laneHeight: CGFloat = 56
     static let laneGap: CGFloat = 4
     static let rulerHeight: CGFloat = 24
+    static let minZoom: Double = 8
+    static let maxZoom: Double = 600
 
+    /// 横スクロール位置(pt)。ScrollView に任せるとズーム時にカーソル位置を保てないので自前で持つ。
+    @State private var scrollX: Double = 0
+    @State private var scrollY: Double = 0
+    @State private var viewport: CGSize = .zero
+    /// レーン表示領域でのカーソル位置。ズームの軸と、右クリック挿入位置に使う。
+    @State private var hoverPoint: CGPoint?
+    @State private var wheelMonitor: Any?
+    @State private var scrollBarGrabOffset: Double?
     @State private var drag: ClipDrag?
     @State private var dropTargetTrack: UUID?
+    @State private var hoveredClipID: UUID?
 
     private var pps: Double { store.pixelsPerSecond }
 
@@ -25,62 +37,38 @@ struct TimelineView: View {
         CGFloat(max(store.duration, 10) * pps) + 400
     }
 
+    private var lanesHeight: CGFloat {
+        CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap)
+    }
+
+    private var maxScrollX: Double {
+        max(0, Double(contentWidth) - Double(viewport.width))
+    }
+
+    private var maxScrollY: Double {
+        max(0, Double(lanesHeight) - (Double(viewport.height) - Double(Self.rulerHeight)))
+    }
+
+    private var offsetX: Double { min(max(0, scrollX), maxScrollX) }
+    private var offsetY: Double { min(max(0, scrollY), maxScrollY) }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
             Divider()
-            // ヘッダ列とレーン列は同じ HStack に入れて縦位置を揃える。
-            // 縦スクロールは外側でまとめてかけ、横スクロールはレーン側だけにかける。
-            ScrollView(.vertical) {
-                HStack(alignment: .top, spacing: 0) {
-                    headerColumn
-                    Divider()
-                    ScrollView(.horizontal) {
-                        ZStack(alignment: .topLeading) {
-                            VStack(alignment: .leading, spacing: 0) {
-                                RulerView(store: store, width: contentWidth)
-                                    .frame(height: Self.rulerHeight)
-                                ForEach(lanes) { track in
-                                    laneView(track)
-                                }
-                            }
-                            playhead
-                        }
-                        .frame(width: contentWidth, alignment: .topLeading)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+            HStack(spacing: 0) {
+                headerColumn
+                Divider()
+                laneArea
             }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            scrollBar
         }
         .focusable()
         .focusEffectDisabled()
-        // 修飾キーなしのキー操作は、ここにフォーカスがあるときだけ効かせる。
-        // こうしておけば一括編集やインスペクタでの文字入力を奪わない。
-        .onKeyPress { press in
-            switch press.key {
-            case .space:
-                store.togglePlay(); return .handled
-            case .leftArrow:
-                store.step(frames: press.modifiers.contains(.shift) ? -10 : -1); return .handled
-            case .rightArrow:
-                store.step(frames: press.modifiers.contains(.shift) ? 10 : 1); return .handled
-            case .delete, .deleteForward:
-                store.deleteSelection(); return .handled
-            case .escape:
-                store.selectedClipIDs = []; return .handled
-            default:
-                break
-            }
-            switch press.characters.lowercased() {
-            case "s": store.splitAtPlayhead(); return .handled
-            case "d": store.duplicateSelection(); return .handled
-            case "j": store.seek(to: store.currentTime - 1); return .handled
-            case "l": store.seek(to: store.currentTime + 1); return .handled
-            case "k": store.togglePlay(); return .handled
-            default: return .ignored
-            }
-        }
+        .onKeyPress(action: handleKey)
+        .onAppear(perform: installWheelMonitor)
+        .onDisappear(perform: removeWheelMonitor)
+        .onChange(of: store.currentTime) { _, _ in followPlayheadIfNeeded() }
     }
 
     // MARK: - 上部ツールバー
@@ -89,23 +77,16 @@ struct TimelineView: View {
         HStack(spacing: 10) {
             Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
                 .font(.system(.body, design: .monospaced))
-                .foregroundStyle(.primary)
             Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
 
             Divider().frame(height: 16)
 
-            Button { store.splitAtPlayhead() } label: {
-                Label("分割", systemImage: "scissors")
-            }
-            .help("再生ヘッドの位置でクリップを分割 (S)")
-
-            Button { store.deleteSelection() } label: {
-                Label("削除", systemImage: "trash")
-            }
-            .disabled(store.selectedClipIDs.isEmpty)
-
+            Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
+                .help("再生ヘッドの位置でクリップを分割 (S)")
+            Button { store.deleteSelection() } label: { Label("削除", systemImage: "trash") }
+                .disabled(store.selectedClipIDs.isEmpty)
             Button { store.duplicateSelection() } label: {
                 Label("複製", systemImage: "plus.square.on.square")
             }
@@ -122,9 +103,15 @@ struct TimelineView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
 
-            Image(systemName: "minus.magnifyingglass").foregroundStyle(.secondary)
-            Slider(value: $store.pixelsPerSecond, in: 12...400).frame(width: 130)
-            Image(systemName: "plus.magnifyingglass").foregroundStyle(.secondary)
+            Button { zoomStep(0.8) } label: { Image(systemName: "minus.magnifyingglass") }
+            Slider(value: Binding(
+                get: { pps },
+                set: { zoom(to: $0, anchorX: Double(viewport.width) / 2) }
+            ), in: Self.minZoom...Self.maxZoom)
+            .frame(width: 130)
+            Button { zoomStep(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
+            Button { zoomToFit() } label: { Image(systemName: "arrow.left.and.right") }
+                .help("全体が収まるまで縮小")
         }
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)
@@ -135,35 +122,71 @@ struct TimelineView: View {
     // MARK: - トラックヘッダ
 
     private var headerColumn: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // ルーラーの高さぶんだけ空ける。これでレーンと行がそろう。
+        VStack(spacing: 0) {
             Color.clear.frame(width: Self.headerWidth, height: Self.rulerHeight)
-            ForEach(lanes) { track in
-                TrackHeaderView(store: store, track: track)
-                    .frame(width: Self.headerWidth, height: Self.laneHeight)
-                    .padding(.bottom, Self.laneGap)
+            VStack(spacing: 0) {
+                ForEach(lanes) { track in
+                    TrackHeaderView(store: store, track: track)
+                        .frame(width: Self.headerWidth, height: Self.laneHeight)
+                        .padding(.bottom, Self.laneGap)
+                }
             }
+            .offset(y: -offsetY)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .clipped()
         }
-        .frame(width: Self.headerWidth, alignment: .topLeading)
+        .frame(width: Self.headerWidth)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    // MARK: - レーン
+    // MARK: - レーン表示領域
+
+    private var laneArea: some View {
+        GeometryReader { geo in
+            VStack(spacing: 0) {
+                // 目盛りは縦スクロールしない。横だけ追従させる。
+                RulerView(store: store, width: contentWidth, scrollX: offsetX)
+                    .frame(height: Self.rulerHeight)
+                    .clipped()
+
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(lanes) { track in
+                        laneView(track)
+                    }
+                }
+                .offset(x: -offsetX, y: -offsetY)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .clipped()
+            }
+            .overlay(alignment: .topLeading) { playhead }
+            .background(Color(nsColor: .underPageBackgroundColor))
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point): hoverPoint = point
+                case .ended: hoverPoint = nil
+                }
+            }
+            .gesture(magnifyGesture)
+            .onAppear { viewport = geo.size }
+            .onChange(of: geo.size) { _, new in viewport = new }
+        }
+    }
 
     private func laneView(_ track: Track) -> some View {
         ZStack(alignment: .topLeading) {
             Rectangle()
                 .fill(laneBackground(track))
-                .frame(height: Self.laneHeight)
+                .frame(width: contentWidth, height: Self.laneHeight)
                 .contentShape(Rectangle())
                 .onTapGesture { store.selectedClipIDs = [] }
+                .contextMenu { laneMenu(track) }
 
             ForEach(track.clips) { clip in
                 clipView(clip, in: track)
             }
         }
         .frame(width: contentWidth, height: Self.laneHeight, alignment: .topLeading)
-        .clipped()
         .padding(.bottom, Self.laneGap)
         .dropDestination(for: URL.self) { urls, location in
             handleDrop(urls: urls, track: track, at: location)
@@ -175,25 +198,139 @@ struct TimelineView: View {
 
     private func laneBackground(_ track: Track) -> Color {
         if dropTargetTrack == track.id { return Color.accentColor.opacity(0.18) }
-        return Color(nsColor: .controlBackgroundColor).opacity(track.isHidden ? 0.4 : 0.8)
+        return Color(nsColor: .controlBackgroundColor).opacity(track.isHidden ? 0.4 : 0.85)
     }
+
+    // MARK: - 右クリックメニュー
+
+    @ViewBuilder
+    private func laneMenu(_ track: Track) -> some View {
+        let time = insertTime
+
+        Text("\(Format.timecode(time, fps: store.project.canvas.fps)) に追加")
+
+        if track.kind == .video {
+            Menu("テキスト") {
+                ForEach(store.project.textTemplates) { template in
+                    Button(template.name) {
+                        store.addTextClip(templateID: template.id, trackID: track.id, at: time)
+                    }
+                }
+            }
+        }
+
+        let usable = store.project.assets.filter {
+            (track.kind == .audio) == ($0.kind == .audio)
+        }
+        if !usable.isEmpty {
+            Menu("素材") {
+                ForEach(usable) { asset in
+                    Button(asset.displayName) {
+                        store.addMediaClip(assetID: asset.id, trackID: track.id, at: time)
+                    }
+                }
+            }
+        }
+
+        Button("ファイルを読み込んで置く…") { importAndPlace(on: track, at: time) }
+
+        Divider()
+        Button("ここへ再生ヘッドを移動") { store.seek(to: time) }
+        Divider()
+        Button("映像トラックを追加") { store.addTrack(kind: .video) }
+        Button("音声トラックを追加") { store.addTrack(kind: .audio) }
+    }
+
+    /// 右クリックした位置の時刻。カーソルが外に出ていれば再生ヘッド位置。
+    private var insertTime: Double {
+        guard let p = hoverPoint else { return store.currentTime }
+        return store.project.canvas.snap(
+            TimelineScroll.time(atX: Double(p.x), scrollX: offsetX, pixelsPerSecond: pps))
+    }
+
+    private func importAndPlace(on track: Track, at time: Double) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = ProjectIO.mediaTypes
+        guard panel.runModal() == .OK else { return }
+        let urls = panel.urls
+        Task { @MainActor in
+            let assets = await store.importAssets(urls: urls)
+            var cursor = time
+            for asset in assets where (track.kind == .audio) == (asset.kind == .audio) {
+                store.addMediaClip(assetID: asset.id, trackID: track.id, at: cursor)
+                cursor += asset.kind == .image ? 5 : asset.duration
+            }
+        }
+    }
+
+    // MARK: - クリップ
 
     private func clipView(_ clip: Clip, in track: Track) -> some View {
         let preview = previewGeometry(for: clip)
-        return ClipView(
-            store: store,
-            clip: clip,
-            track: track,
-            isSelected: store.selectedClipIDs.contains(clip.id),
-            isDragging: drag?.clipID == clip.id
-        )
-        .frame(width: max(6, CGFloat(preview.duration * pps)), height: Self.laneHeight)
+        let width = max(6, CGFloat(preview.duration * pps))
+        let isSelected = store.selectedClipIDs.contains(clip.id)
+        // 短いクリップでも掴み代が本体を覆い尽くさないようにする。
+        let handleWidth = min(9, max(4, width / 3))
+
+        return ZStack(alignment: .leading) {
+            ClipView(store: store, clip: clip, track: track,
+                     isSelected: isSelected, isDragging: drag?.clipID == clip.id)
+                .gesture(moveGesture(clip: clip, track: track))
+
+            // 掴み代はクリップ本体より後ろに置く＝上に重なるので、確実にこちらが先に当たる。
+            HStack(spacing: 0) {
+                trimHandle(clip: clip, edge: .leading, width: handleWidth,
+                           visible: isSelected || hoveredClipID == clip.id)
+                Spacer(minLength: 0)
+                trimHandle(clip: clip, edge: .trailing, width: handleWidth,
+                           visible: isSelected || hoveredClipID == clip.id)
+            }
+            .disabled(track.isLocked)
+        }
+        .frame(width: width, height: Self.laneHeight)
         .offset(x: CGFloat(preview.start * pps))
-        .zIndex(drag?.clipID == clip.id ? 10 : 0)
-        .gesture(moveGesture(clip: clip, track: track))
-        .overlay(alignment: .leading) { trimHandle(clip: clip, edge: .leading) }
-        .overlay(alignment: .trailing) { trimHandle(clip: clip, edge: .trailing) }
         .offset(y: drag?.clipID == clip.id ? CGFloat(drag?.laneOffset ?? 0) : 0)
+        .zIndex(drag?.clipID == clip.id ? 10 : 0)
+        .onHover { inside in
+            if inside { hoveredClipID = clip.id }
+            else if hoveredClipID == clip.id { hoveredClipID = nil }
+        }
+    }
+
+    private func trimHandle(clip: Clip, edge: HorizontalEdge,
+                            width: CGFloat, visible: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 2)
+            .fill(Color.white.opacity(visible ? 0.55 : 0.001))
+            .frame(width: width)
+            .padding(.vertical, 6)
+            .padding(edge == .leading ? .leading : .trailing, 2)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
+            }
+            .highPriorityGesture(
+                DragGesture(minimumDistance: 1)
+                    .onChanged { value in
+                        if drag == nil {
+                            drag = ClipDrag(clipID: clip.id,
+                                            mode: edge == .leading ? .trimLeft : .trimRight)
+                        }
+                        let raw = Double(value.translation.width) / pps
+                        drag?.deltaSeconds = snapped(delta: raw, clip: clip,
+                                                     edge: edge == .leading ? .start : .end)
+                    }
+                    .onEnded { _ in
+                        defer { drag = nil }
+                        guard let d = drag, d.clipID == clip.id else { return }
+                        if edge == .leading {
+                            store.trimLeft(clipID: clip.id, to: clip.start + d.deltaSeconds)
+                        } else {
+                            store.trimRight(clipID: clip.id, to: clip.end + d.deltaSeconds)
+                        }
+                    }
+            )
     }
 
     // MARK: - ドラッグ
@@ -243,6 +380,7 @@ struct TimelineView: View {
                         store.select(clipID: clip.id, extend: false)
                     }
                 }
+                guard drag?.mode == .move else { return }
                 let raw = Double(value.translation.width) / pps
                 drag?.deltaSeconds = snapped(delta: raw, clip: clip, edge: .start)
                 let laneStep = Double(Self.laneHeight + Self.laneGap)
@@ -250,42 +388,11 @@ struct TimelineView: View {
             }
             .onEnded { _ in
                 defer { drag = nil }
-                guard let d = drag, d.clipID == clip.id else { return }
+                guard let d = drag, d.clipID == clip.id, d.mode == .move else { return }
                 let newStart = max(0, clip.start + d.deltaSeconds)
                 let targetTrack = laneTrack(from: track, offset: d.laneDelta) ?? track
                 store.move(clipID: clip.id, toTrack: targetTrack.id, start: newStart)
             }
-    }
-
-    private func trimHandle(clip: Clip, edge: HorizontalEdge) -> some View {
-        Rectangle()
-            .fill(Color.white.opacity(0.001))
-            .frame(width: 10)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
-            }
-            .highPriorityGesture(
-                DragGesture(minimumDistance: 2)
-                    .onChanged { value in
-                        if drag == nil {
-                            drag = ClipDrag(clipID: clip.id,
-                                            mode: edge == .leading ? .trimLeft : .trimRight)
-                        }
-                        let raw = Double(value.translation.width) / pps
-                        drag?.deltaSeconds = snapped(delta: raw, clip: clip,
-                                                     edge: edge == .leading ? .start : .end)
-                    }
-                    .onEnded { _ in
-                        defer { drag = nil }
-                        guard let d = drag, d.clipID == clip.id else { return }
-                        if edge == .leading {
-                            store.trimLeft(clipID: clip.id, to: clip.start + d.deltaSeconds)
-                        } else {
-                            store.trimRight(clipID: clip.id, to: clip.end + d.deltaSeconds)
-                        }
-                    }
-            )
     }
 
     private func laneTrack(from track: Track, offset: Int) -> Track? {
@@ -323,13 +430,13 @@ struct TimelineView: View {
     // MARK: - 再生ヘッド
 
     private var playhead: some View {
-        let x = CGFloat(store.currentTime * pps)
-        let height = Self.rulerHeight + CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap)
+        let x = CGFloat(store.currentTime * pps - offsetX)
+        let visible = x >= -1 && x <= viewport.width + 1
         return Rectangle()
             .fill(Color.red)
-            .frame(width: 1.5, height: max(height, Self.rulerHeight))
+            .frame(width: 1.5)
+            .frame(maxHeight: .infinity)
             .overlay(alignment: .top) {
-                // Path の座標はフレーム左上が原点。幅 10 の中で中央に頂点を置く。
                 Path { p in
                     p.move(to: CGPoint(x: 0, y: 0))
                     p.addLine(to: CGPoint(x: 10, y: 0))
@@ -339,21 +446,188 @@ struct TimelineView: View {
                 .fill(Color.red)
                 .frame(width: 10, height: 8)
             }
-            // 線の中心を時刻位置に合わせる。
             .offset(x: x - 0.75)
+            .opacity(visible ? 1 : 0)
             .allowsHitTesting(false)
+    }
+
+    /// 再生中、ヘッドが画面外に出そうになったら表示を送る。
+    private func followPlayheadIfNeeded() {
+        guard store.isPlaying, viewport.width > 0 else { return }
+        let x = store.currentTime * pps - offsetX
+        if x > Double(viewport.width) - 80 {
+            scrollX = min(maxScrollX, store.currentTime * pps - Double(viewport.width) * 0.25)
+        } else if x < 0 {
+            scrollX = max(0, store.currentTime * pps - Double(viewport.width) * 0.25)
+        }
+    }
+
+    // MARK: - ズームとパン
+
+    private func zoom(to newValue: Double, anchorX: Double) {
+        let old = pps
+        let clamped = min(Self.maxZoom, max(Self.minZoom, newValue))
+        guard abs(clamped - old) > 1e-9 else { return }
+        // カーソル（またはビューポート中央）の下にある時刻を動かさない。
+        let next = TimelineScroll.anchoredScrollX(scrollX: offsetX, anchorX: anchorX,
+                                                  oldPPS: old, newPPS: clamped)
+        store.pixelsPerSecond = clamped
+        scrollX = next
+    }
+
+    private func zoomStep(_ factor: Double) {
+        let anchor = hoverPoint.map { Double($0.x) } ?? Double(viewport.width) / 2
+        zoom(to: pps * factor, anchorX: anchor)
+    }
+
+    private func zoomToFit() {
+        guard store.duration > 0, viewport.width > 0 else { return }
+        let target = (Double(viewport.width) - 40) / store.duration
+        store.pixelsPerSecond = min(Self.maxZoom, max(Self.minZoom, target))
+        scrollX = 0
+    }
+
+    private func pan(dx: Double, dy: Double) {
+        scrollX = TimelineScroll.clamp(scrollX + dx,
+                                       contentWidth: Double(contentWidth),
+                                       viewportWidth: Double(viewport.width))
+        scrollY = min(max(0, scrollY + dy), maxScrollY)
+    }
+
+    // MARK: - ホイール
+
+    private func installWheelMonitor() {
+        guard wheelMonitor == nil else { return }
+        wheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+            // カーソルがタイムライン上にあるときだけ横取りする。
+            // シートが出ている間は、その中のスクロールを奪わないよう手を出さない。
+            guard let point = hoverPoint, NSApp.keyWindow?.isSheet != true else { return event }
+            handleScroll(event, at: Double(point.x))
+            return nil
+        }
+    }
+
+    private func removeWheelMonitor() {
+        if let wheelMonitor { NSEvent.removeMonitor(wheelMonitor) }
+        wheelMonitor = nil
+    }
+
+    private func handleScroll(_ event: NSEvent, at anchorX: Double) {
+        let flags = event.modifierFlags
+        let precise = event.hasPreciseScrollingDeltas
+        let rawX = Double(event.scrollingDeltaX)
+        let rawY = Double(event.scrollingDeltaY)
+
+        // ⌘ または ⌥ でズーム。カーソル位置の時刻を軸にする。
+        if flags.contains(.command) || flags.contains(.option) {
+            let amount = precise ? rawY : rawY * 4
+            zoom(to: pps * exp(amount * 0.01), anchorX: anchorX)
+            return
+        }
+
+        var dx = -rawX
+        var dy = -rawY
+        if flags.contains(.shift) {
+            // ⇧ で横パン固定。
+            dx = -(abs(rawX) > abs(rawY) ? rawX : rawY)
+            dy = 0
+        } else if abs(rawX) < 0.01 && maxScrollY <= 0 {
+            // 縦に動かす先が無いマウスホイールは横パンに回す。
+            dx = -rawY
+            dy = 0
+        }
+        let scale = precise ? 1.0 : 6.0
+        pan(dx: dx * scale, dy: dy * scale)
+    }
+
+    private var magnifyGesture: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let anchor = hoverPoint.map { Double($0.x) } ?? Double(viewport.width) / 2
+                // 変化ぶんだけ倍率を当てる。
+                zoom(to: pps * (1 + (value.magnification - 1) * 0.06), anchorX: anchor)
+            }
+    }
+
+    // MARK: - 横スクロールバー
+
+    private var scrollBar: some View {
+        GeometryReader { geo in
+            let trackWidth = Double(geo.size.width) - Double(Self.headerWidth) - 8
+            let ratio = contentWidth > 0 ? min(1, Double(viewport.width) / Double(contentWidth)) : 1
+            let thumb = max(36, trackWidth * ratio)
+            let travel = max(0, trackWidth - thumb)
+            let pos = maxScrollX > 0 ? (offsetX / maxScrollX) * travel : 0
+
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.secondary.opacity(0.10))
+                Capsule()
+                    .fill(Color.secondary.opacity(scrollBarGrabOffset == nil ? 0.35 : 0.6))
+                    .frame(width: thumb)
+                    .offset(x: pos)
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                if scrollBarGrabOffset == nil {
+                                    scrollBarGrabOffset = Double(value.startLocation.x) - pos
+                                }
+                                guard travel > 0, let grab = scrollBarGrabOffset else { return }
+                                let newPos = Double(value.location.x) - grab
+                                scrollX = min(max(0, newPos / travel * maxScrollX), maxScrollX)
+                            }
+                            .onEnded { _ in scrollBarGrabOffset = nil }
+                    )
+            }
+            .frame(width: max(0, trackWidth), height: 7)
+            .padding(.leading, Double(Self.headerWidth) + 4)
+            .padding(.vertical, 3)
+            .opacity(maxScrollX > 0 ? 1 : 0)
+        }
+        .frame(height: 13)
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - キー操作
+
+    /// 修飾キーなしのキーは、タイムラインにフォーカスがあるときだけ効かせる。
+    /// こうしておけば一括編集やインスペクタでの文字入力を奪わない。
+    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
+        switch press.key {
+        case .space:
+            store.togglePlay(); return .handled
+        case .leftArrow:
+            store.step(frames: press.modifiers.contains(.shift) ? -10 : -1); return .handled
+        case .rightArrow:
+            store.step(frames: press.modifiers.contains(.shift) ? 10 : 1); return .handled
+        case .delete, .deleteForward:
+            store.deleteSelection(); return .handled
+        case .escape:
+            store.selectedClipIDs = []; return .handled
+        default:
+            break
+        }
+        switch press.characters.lowercased() {
+        case "s": store.splitAtPlayhead(); return .handled
+        case "d": store.duplicateSelection(); return .handled
+        case "j": store.seek(to: store.currentTime - 1); return .handled
+        case "l": store.seek(to: store.currentTime + 1); return .handled
+        case "k": store.togglePlay(); return .handled
+        case "=", "+": zoomStep(1.25); return .handled
+        case "-": zoomStep(0.8); return .handled
+        case "f": zoomToFit(); return .handled
+        default: return .ignored
+        }
     }
 
     // MARK: - ドロップ
 
     private func handleDrop(urls: [URL], track: Track, at location: CGPoint) {
+        // location はレーンの内容座標。スクロール量はすでに織り込まれている。
         let time = store.project.canvas.snap(max(0, Double(location.x) / pps))
         Task { @MainActor in
             let assets = await store.importAssets(urls: urls)
             var cursor = time
-            for asset in assets {
-                let wantsAudio = asset.kind == .audio
-                guard (track.kind == .audio) == wantsAudio else { continue }
+            for asset in assets where (track.kind == .audio) == (asset.kind == .audio) {
                 store.addMediaClip(assetID: asset.id, trackID: track.id, at: cursor)
                 cursor += asset.kind == .image ? 5 : asset.duration
             }
@@ -366,18 +640,20 @@ struct TimelineView: View {
 private struct RulerView: View {
     @Bindable var store: EditorStore
     let width: CGFloat
+    let scrollX: Double
 
     var body: some View {
         let pps = store.pixelsPerSecond
         let spec = TickSpec.forRuler(pixelsPerSecond: pps)
         SwiftUI.Canvas { context, size in
             let labelColor = Color.secondary
-            let count = spec.minorCount(width: Double(size.width), pixelsPerSecond: pps)
+            let count = spec.minorCount(width: Double(size.width) + scrollX, pixelsPerSecond: pps)
             for i in 0...max(0, count) {
                 let isMajor = spec.isMajor(index: i)
                 if !isMajor && !spec.showsMinor { continue }
                 let t = spec.time(index: i)
-                let x = CGFloat(t * pps)
+                let x = CGFloat(t * pps - scrollX)
+                if x < -60 { continue }
                 if x > size.width { break }
 
                 var line = Path()
@@ -396,18 +672,19 @@ private struct RulerView: View {
                 }
             }
         }
-        .frame(width: width)
+        .frame(maxWidth: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     store.pause()
-                    store.seek(to: store.project.canvas.snap(Double(value.location.x) / pps))
+                    let t = TimelineScroll.time(atX: Double(value.location.x),
+                                                scrollX: scrollX, pixelsPerSecond: pps)
+                    store.seek(to: store.project.canvas.snap(t))
                 }
         )
     }
-
 }
 
 // MARK: - トラックヘッダ
@@ -427,26 +704,14 @@ private struct TrackHeaderView: View {
             Spacer(minLength: 0)
             if track.kind == .video {
                 toggle(systemImage: track.isHidden ? "eye.slash" : "eye", isOn: !track.isHidden) {
-                    store.edit { p in
-                        if let i = p.tracks.firstIndex(where: { $0.id == track.id }) {
-                            p.tracks[i].isHidden.toggle()
-                        }
-                    }
+                    mutate { $0.isHidden.toggle() }
                 }
             }
             toggle(systemImage: track.isMuted ? "speaker.slash" : "speaker.wave.2", isOn: !track.isMuted) {
-                store.edit { p in
-                    if let i = p.tracks.firstIndex(where: { $0.id == track.id }) {
-                        p.tracks[i].isMuted.toggle()
-                    }
-                }
+                mutate { $0.isMuted.toggle() }
             }
             toggle(systemImage: track.isLocked ? "lock" : "lock.open", isOn: !track.isLocked) {
-                store.edit { p in
-                    if let i = p.tracks.firstIndex(where: { $0.id == track.id }) {
-                        p.tracks[i].isLocked.toggle()
-                    }
-                }
+                mutate { $0.isLocked.toggle() }
             }
         }
         .padding(.horizontal, 8)
@@ -457,6 +722,14 @@ private struct TrackHeaderView: View {
             Button("下へ") { store.moveTrack(id: track.id, offset: -1) }
             Divider()
             Button("トラックを削除", role: .destructive) { store.removeTrack(id: track.id) }
+        }
+    }
+
+    private func mutate(_ body: @escaping (inout Track) -> Void) {
+        store.edit { p in
+            if let i = p.tracks.firstIndex(where: { $0.id == track.id }) {
+                body(&p.tracks[i])
+            }
         }
     }
 
@@ -564,7 +837,6 @@ private struct ClipView: View {
     private var label: String {
         if let inst = clip.content.textInstance {
             if let template = store.project.template(inst.templateID) {
-                // 一番はじめの文字列プロパティを見出しに使う。
                 for def in template.props where def.type == .string {
                     if let s = inst.value(def.key, in: template)?.stringValue, !s.isEmpty {
                         return s

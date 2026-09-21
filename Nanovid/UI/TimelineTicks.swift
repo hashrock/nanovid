@@ -64,3 +64,30 @@ struct TickSpec: Equatable {
     /// i 本目の小目盛りの時刻。浮動小数の誤差が積もらないよう掛け算で出す。
     func time(index i: Int) -> Double { Double(i) * minor }
 }
+
+/// タイムラインのスクロール位置の計算。UI から切り離してテストできるようにしてある。
+enum TimelineScroll {
+
+    /// ズームしても、画面上 anchorX の位置に見えている時刻が動かないスクロール位置を返す。
+    /// - Parameters:
+    ///   - scrollX: いまのスクロール位置(pt)。
+    ///   - anchorX: 基準にする画面上の横位置(pt)。カーソル位置やビューポート中央。
+    static func anchoredScrollX(scrollX: Double, anchorX: Double,
+                                oldPPS: Double, newPPS: Double) -> Double {
+        guard oldPPS > 0, newPPS > 0 else { return scrollX }
+        let anchorTime = (scrollX + anchorX) / oldPPS
+        return max(0, anchorTime * newPPS - anchorX)
+    }
+
+    /// スクロール位置を内容の範囲に収める。
+    static func clamp(_ value: Double, contentWidth: Double, viewportWidth: Double) -> Double {
+        let maxScroll = max(0, contentWidth - viewportWidth)
+        return min(max(0, value), maxScroll)
+    }
+
+    /// 画面上 x の位置に対応する時刻。
+    static func time(atX x: Double, scrollX: Double, pixelsPerSecond: Double) -> Double {
+        guard pixelsPerSecond > 0 else { return 0 }
+        return max(0, (scrollX + x) / pixelsPerSecond)
+    }
+}
