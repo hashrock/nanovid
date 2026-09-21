@@ -123,6 +123,11 @@ struct TimelineView: View {
                 selectionMenu
             }
 
+            if let range = store.pendingExtractRange {
+                Divider().frame(height: 16)
+                extractControl(range)
+            }
+
             Spacer()
 
             Menu {
@@ -148,6 +153,27 @@ struct TimelineView: View {
         .labelStyle(.iconOnly)
         .padding(.horizontal, 10)
         .frame(height: 34)
+    }
+
+    /// 切り抜きの範囲を打っているあいだの表示と操作。
+    private func extractControl(_ range: ClosedRange<Double>) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "scissors")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            Text("切り抜き \(Format.seconds(range.upperBound - range.lowerBound)) 秒")
+                .font(.caption)
+                .foregroundStyle(.orange)
+            Button("切り抜く") { store.extractMarkedRange() }
+                .font(.caption)
+            Button {
+                store.cancelExtract()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .help("切り抜きをやめる (Esc)")
+        }
     }
 
     /// 選択中のクリップに対する操作。まとめて選んだあとの行き先をここに集める。
@@ -241,6 +267,7 @@ struct TimelineView: View {
                 .clipped()
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .overlay(alignment: .topLeading) { extractOverlay }
             .overlay(alignment: .topLeading) { playhead }
             .overlay(alignment: .topLeading) { marqueeOverlay }
             .background(Color(nsColor: .underPageBackgroundColor))
@@ -649,6 +676,29 @@ struct TimelineView: View {
             .allowsHitTesting(false)
     }
 
+    /// 切り抜きの範囲。開始を打ってから切り抜くまでのあいだ出しておく。
+    @ViewBuilder
+    private var extractOverlay: some View {
+        if let range = store.pendingExtractRange {
+            let x0 = TimelineScroll.viewportX(forTime: range.lowerBound,
+                                              scrollX: offsetX, pixelsPerSecond: pps)
+            let x1 = TimelineScroll.viewportX(forTime: range.upperBound,
+                                              scrollX: offsetX, pixelsPerSecond: pps)
+            Rectangle()
+                .fill(Color.orange.opacity(0.16))
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(Color.orange).frame(width: 2)
+                }
+                .overlay(alignment: .trailing) {
+                    Rectangle().fill(Color.orange.opacity(0.7)).frame(width: 1)
+                }
+                .frame(width: max(2, x1 - x0))
+                .frame(maxHeight: .infinity)
+                .offset(x: x0)
+                .allowsHitTesting(false)
+        }
+    }
+
     /// 再生中、ヘッドが画面外に出そうになったら表示を送る。
     private func followPlayheadIfNeeded() {
         guard store.isPlaying, viewport.width > 0 else { return }
@@ -825,7 +875,13 @@ struct TimelineView: View {
         case .clear:
             store.deleteSelection(); return .handled
         case .escape:
-            store.selectedClipIDs = []; return .handled
+            // 切り抜きを打っている途中なら、まずそちらをやめる。
+            if store.extractStart != nil {
+                store.cancelExtract()
+            } else {
+                store.selectedClipIDs = []
+            }
+            return .handled
         default:
             break
         }
@@ -838,6 +894,8 @@ struct TimelineView: View {
         }
 
         switch press.characters.lowercased() {
+        case "q": store.markExtractStart(); return .handled
+        case "w": store.extractMarkedRange(); return .handled
         case "s": store.splitAtPlayhead(); return .handled
         case "d": store.duplicateSelection(); return .handled
         case "j": store.seek(to: store.currentTime - 1); return .handled

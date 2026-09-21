@@ -74,6 +74,12 @@ struct NanovidApp: App {
                 // 標準のテキスト編集が使うキー。メニューに載せると常に有効に
                 // なり、字幕の入力欄から奪ってしまう。
                 // タイムラインにフォーカスがあるときだけ効くよう onKeyPress で受ける。
+                Button("切り抜き開始 (Q)") { store.markExtractStart() }
+                Button("切り抜いて詰める (W)") { store.extractMarkedRange() }
+                    .disabled(store.extractStart == nil)
+                Button("切り抜きをやめる") { store.cancelExtract() }
+                    .disabled(store.extractStart == nil)
+                Divider()
                 Button("削除 (Delete)") { store.deleteSelection() }
                     .disabled(store.selectedClipIDs.isEmpty)
                 Button("削除して詰める") { store.rippleDeleteSelection() }

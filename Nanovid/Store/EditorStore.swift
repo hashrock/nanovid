@@ -27,6 +27,10 @@ final class EditorStore {
 
     var buildError: String?
     var isBuilding = false
+    /// 切り抜きの開始点。打っている間だけタイムラインに範囲が出る。
+    /// プロジェクトには保存しない（編集中の目印なので）。
+    var extractStart: Double?
+
     /// 字幕の自動生成の進み具合。nil なら動いていない。
     var subtitleProgress: Double?
     /// 動いている書き起こし。中止のために持っておく（型は macOS 26 限定なので AnyObject）。
