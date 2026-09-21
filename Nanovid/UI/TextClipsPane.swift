@@ -1,9 +1,12 @@
 import SwiftUI
 
-/// テキストレイヤーの一括編集。字幕の打ち直しや、色・サイズのまとめ替えを想定。
-struct BulkTextEditorView: View {
+/// 画面下段の「字幕」タブ。テキストクリップを表で一覧し、まとめて打ち替える。
+///
+/// モーダルにしないのが肝。字幕は打ちながらプレビューで確かめるものなので、
+/// 別ウィンドウに隠してしまうと確認のたびに閉じることになる。
+struct TextClipsPane: View {
     @Bindable var store: EditorStore
-    @Environment(\.dismiss) private var dismiss
+    @Binding var bottomTab: BottomTab
 
     @State private var templateFilter: UUID?
     @State private var checked: Set<UUID> = []
@@ -18,7 +21,7 @@ struct BulkTextEditorView: View {
             .sorted { $0.start < $1.start }
     }
 
-    /// 現在の絞り込みで共通して編集できるテンプレート（1 種類のときだけ props を出す）。
+    /// 絞り込んだ結果が 1 種類のテンプレートに揃っているときだけ props を列に出す。
     private var activeTemplate: TextTemplate? {
         let ids = Set(rows.compactMap { $0.content.textInstance?.templateID })
         guard ids.count == 1, let id = ids.first else { return nil }
@@ -34,31 +37,27 @@ struct BulkTextEditorView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
             header
             Divider()
-
             if rows.isEmpty {
-                ContentUnavailableView("テキストクリップがありません", systemImage: "textformat")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                empty
             } else {
                 table
             }
-
-            Divider()
-            footer
         }
-        .frame(width: 780, height: 520)
     }
 
-    // MARK: - ヘッダ
+    // MARK: - 見出し
 
     private var header: some View {
-        HStack(spacing: 12) {
-            Text("テキスト一括編集").font(.title3.bold())
+        HStack(spacing: 10) {
+            BottomTabPicker(selection: $bottomTab, textCount: store.project.allTextClips.count)
+
+            Divider().frame(height: 16)
 
             Picker("", selection: $templateFilter) {
-                Text("すべてのテンプレート").tag(UUID?.none)
+                Text("すべて").tag(UUID?.none)
                 ForEach(store.project.textTemplates) { t in
                     Text(t.name).tag(UUID?.some(t.id))
                 }
@@ -66,13 +65,85 @@ struct BulkTextEditorView: View {
             .labelsHidden()
             .fixedSize()
 
+            Menu {
+                ForEach(store.project.textTemplates) { template in
+                    Button(template.name) { add(template) }
+                }
+            } label: {
+                Label("追加", systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help("再生ヘッドの位置にテキストを足す")
+
             Spacer()
 
-            Text("\(rows.count) 件")
+            if checked.isEmpty {
+                Text("\(rows.count) 件")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                bulkControls
+            }
+        }
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .frame(height: 34)
+    }
+
+    /// チェックした行へまとめて適用する操作。
+    private var bulkControls: some View {
+        HStack(spacing: 10) {
+            Text("\(checked.count) 件を選択")
+                .font(.caption)
+                .foregroundStyle(.orange)
+
+            ForEach(otherProps) { def in
+                if def.type == .color {
+                    ColorPicker(def.label, selection: Binding(
+                        get: { Color(commonColor(def) ?? .white) },
+                        set: { store.setTextProp(def.key, to: .color(RGBAColor($0)), clipIDs: checked) }
+                    ), supportsOpacity: true)
+                    .labelsHidden()
+                    .help(def.label)
+                }
+            }
+
+            Menu("フェード") {
+                Button("0.2 秒") { applyFade(0.2) }
+                Button("0.5 秒") { applyFade(0.5) }
+                Button("なし") { applyFade(0) }
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+
+            Button("タイムラインで選択") { store.selectedClipIDs = checked }
+            Button("削除", role: .destructive) {
+                store.selectedClipIDs = checked
+                store.deleteSelection()
+                checked = []
+            }
+            Button {
+                checked = []
+            } label: {
+                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+            }
+            .help("選択を解除")
+        }
+        .font(.caption)
+    }
+
+    private var empty: some View {
+        VStack(spacing: 8) {
+            Text("テキストクリップがありません")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+            Text("上の「追加」か、タイムラインを右クリックして置けます。")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .padding(14)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .underPageBackgroundColor))
     }
 
     // MARK: - 表
@@ -87,6 +158,7 @@ struct BulkTextEditorView: View {
                 }
             }
         }
+        .background(Color(nsColor: .controlBackgroundColor).opacity(0.4))
     }
 
     private var columnHeader: some View {
@@ -100,20 +172,21 @@ struct BulkTextEditorView: View {
 
             Text("開始").frame(width: 72, alignment: .leading)
             if stringProps.isEmpty {
-                Text("内容").frame(maxWidth: .infinity, alignment: .leading)
+                Text("内容（テンプレートごとの主要項目）")
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ForEach(stringProps) { def in
                     Text(def.label).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            Text("尺").frame(width: 54, alignment: .trailing)
-            Color.clear.frame(width: 28)
+            Text("尺 (秒)").frame(width: 50, alignment: .trailing)
+            Color.clear.frame(width: 26)
         }
         .font(.caption.bold())
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func row(_ clip: Clip) -> some View {
@@ -136,21 +209,27 @@ struct BulkTextEditorView: View {
             .frame(width: 72, alignment: .leading)
 
             if stringProps.isEmpty {
-                Text(summary(clip))
-                    .font(.caption)
-                    .lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // テンプレートが混在しているときは、行ごとに自前の主要項目を編集する。
+                if let def = primaryProp(clip) {
+                    TextPropField(store: store, clip: clip, def: def)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text(summary(clip))
+                        .font(.caption)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             } else {
                 ForEach(stringProps) { def in
-                    BulkTextField(store: store, clip: clip, def: def)
+                    TextPropField(store: store, clip: clip, def: def)
                         .frame(maxWidth: .infinity)
                 }
             }
 
-            Text(Format.duration(clip.duration))
+            Text(Format.seconds(clip.duration))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .frame(width: 54, alignment: .trailing)
+                .frame(width: 50, alignment: .trailing)
 
             Button {
                 store.selectedClipIDs = [clip.id]
@@ -159,12 +238,21 @@ struct BulkTextEditorView: View {
                 Image(systemName: "trash").font(.caption)
             }
             .buttonStyle(.borderless)
-            .frame(width: 28)
+            .frame(width: 26)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
         .background(store.selectedClipIDs.contains(clip.id)
-                    ? Color.accentColor.opacity(0.12) : Color.clear)
+                    ? Color.accentColor.opacity(0.14) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture { store.selectedClipIDs = [clip.id] }
+    }
+
+    /// 行ごとの主要なテキスト項目。テンプレートが混ざっていても打ち替えられるようにする。
+    private func primaryProp(_ clip: Clip) -> PropDef? {
+        guard let inst = clip.content.textInstance,
+              let template = store.project.template(inst.templateID) else { return nil }
+        return template.props.first { $0.type == .string && $0.showInBulkEditor }
     }
 
     private func summary(_ clip: Clip) -> String {
@@ -177,59 +265,14 @@ struct BulkTextEditorView: View {
         return parts.isEmpty ? template.name : parts.joined(separator: " / ")
     }
 
-    // MARK: - フッタ（選択行へのまとめ適用）
+    // MARK: - 操作
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            if checked.isEmpty {
-                Text("行を選ぶと、色やフェードをまとめて変更できます。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text("\(checked.count) 件を選択中").font(.caption)
-
-                ForEach(otherProps) { def in
-                    bulkPropControl(def)
-                }
-
-                Menu("フェード") {
-                    Button("0.2 秒") { applyFade(0.2) }
-                    Button("0.5 秒") { applyFade(0.5) }
-                    Button("なし") { applyFade(0) }
-                }
-                .fixedSize()
-
-                Button("タイムラインで選択") {
-                    store.selectedClipIDs = checked
-                }
-            }
-
-            Spacer()
-            Button("閉じる") { dismiss() }
-                .keyboardShortcut(.defaultAction)
-        }
-        .padding(14)
-    }
-
-    @ViewBuilder
-    private func bulkPropControl(_ def: PropDef) -> some View {
-        switch def.type {
-        case .color:
-            ColorPicker(def.label, selection: Binding(
-                get: { Color(commonColor(def) ?? .white) },
-                set: { store.setTextProp(def.key, to: .color(RGBAColor($0)), clipIDs: checked) }
-            ), supportsOpacity: true)
-            .labelsHidden()
-            .help(def.label)
-        case .bool:
-            Toggle(def.label, isOn: Binding(
-                get: { false },
-                set: { store.setTextProp(def.key, to: .bool($0), clipIDs: checked) }
-            ))
-            .toggleStyle(.checkbox)
-        default:
-            EmptyView()
-        }
+    private func add(_ template: TextTemplate) {
+        let track = store.selectedTrackID.flatMap { id in
+            store.project.tracks.first { $0.id == id && $0.kind == .video }
+        } ?? store.project.tracks.last { $0.kind == .video }
+        guard let track else { return }
+        store.addTextClip(templateID: template.id, trackID: track.id, at: store.currentTime)
     }
 
     private func commonColor(_ def: PropDef) -> RGBAColor? {
@@ -254,8 +297,8 @@ struct BulkTextEditorView: View {
     }
 }
 
-/// 行内のテキスト入力。入力中は undo をまとめ、確定でコミットする。
-private struct BulkTextField: View {
+/// 表の中のテキスト入力。入力中は undo をまとめる。
+private struct TextPropField: View {
     @Bindable var store: EditorStore
     let clip: Clip
     let def: PropDef
@@ -271,7 +314,7 @@ private struct BulkTextField: View {
             .onChange(of: text) { _, new in
                 guard loaded else { return }
                 store.setTextProp(def.key, to: .string(new), clipIDs: [clip.id],
-                                  coalesceKey: "bulk:\(clip.id):\(def.key)")
+                                  coalesceKey: "table:\(clip.id):\(def.key)")
             }
             .onChange(of: clip.id) { _, _ in reload() }
     }

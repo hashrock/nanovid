@@ -74,7 +74,7 @@ struct PreviewPane: View {
     }
 
     private func fit(aspect: Double, in size: CGSize) -> CGSize {
-        let padding: Double = 16
+        let padding: Double = 8
         let w = max(1, size.width - padding * 2)
         let h = max(1, size.height - padding * 2)
         if w / h > aspect {

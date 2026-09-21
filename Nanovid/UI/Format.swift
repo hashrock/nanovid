@@ -40,6 +40,14 @@ enum Format {
         return 3
     }
 
+    /// 尺の表示用。2.4 なら "2.4"、3.0 なら "3"。
+    static func seconds(_ value: Double) -> String {
+        let rounded = (value * 10).rounded() / 10
+        return rounded == rounded.rounded()
+            ? String(format: "%.0f", rounded)
+            : String(format: "%.1f", rounded)
+    }
+
     static func duration(_ seconds: Double) -> String {
         let whole = Int(seconds.rounded())
         let m = whole / 60, s = whole % 60

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 
 struct TimelineView: View {
     @Bindable var store: EditorStore
+    @Binding var bottomTab: BottomTab
 
     static let headerWidth: CGFloat = 176
     static let laneHeight: CGFloat = 56
@@ -79,8 +80,12 @@ struct TimelineView: View {
 
     private var toolbar: some View {
         HStack(spacing: 10) {
+            BottomTabPicker(selection: $bottomTab, textCount: store.project.allTextClips.count)
+
+            Divider().frame(height: 16)
+
             Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                .font(.system(.body, design: .monospaced))
+                .font(.system(.callout, design: .monospaced))
             Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)

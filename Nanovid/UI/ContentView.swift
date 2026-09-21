@@ -6,37 +6,40 @@ struct ContentView: View {
 
     @State private var recorder = AudioRecorder()
     @State private var showExport = false
-    @State private var showBulkEditor = false
     @State private var editingTemplateID: UUID?
     /// 録音を始めたときの再生ヘッド位置。止めたらそこへ置く。
     @State private var recordingAnchor: Double = 0
 
+    // レイアウト。素材パネルは使う場面が限られるので既定では閉じておく。
+    @State private var showLibrary = false
+    @State private var showInspector = true
+    @State private var libraryWidth: CGFloat = 230
+    @State private var inspectorWidth: CGFloat = 290
+    /// 下段の高さ。窓を広げたぶんは上段（プレビュー）に回したいので、
+    /// 上段ではなく下段の高さを持つ。
+    @State private var bottomHeight: CGFloat = 240
+    @State private var bottomTab: BottomTab = .timeline
+
+    private let topMinHeight: CGFloat = 220
+    private let bottomMinHeight: CGFloat = 130
+
     var body: some View {
-        VSplitView {
-            HSplitView {
-                LibraryView(store: store, editingTemplateID: $editingTemplateID)
-                    .frame(minWidth: 200, idealWidth: 230, maxWidth: 340)
-
-                VStack(spacing: 0) {
-                    PreviewPane(store: store)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    Divider()
-                    transport
-                }
-                .frame(minWidth: 360)
-
-                InspectorView(store: store)
-                    .frame(minWidth: 260, idealWidth: 290, maxWidth: 400)
+        GeometryReader { geo in
+            let bottom = resolvedBottomHeight(in: geo.size.height)
+            VStack(spacing: 0) {
+                topPane
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                PaneDivider.Horizontal(
+                    bottomHeight: $bottomHeight,
+                    range: bottomMinHeight...max(bottomMinHeight,
+                                                 geo.size.height - topMinHeight))
+                bottomPane
+                    .frame(height: bottom)
             }
-            .frame(minHeight: 300, idealHeight: 470)
-
-            TimelineView(store: store)
-                .frame(minHeight: 160, idealHeight: 230)
         }
         .toolbar { toolbarContent }
         .navigationTitle(store.project.name + (store.hasUnsavedChanges ? " — 編集中" : ""))
         .sheet(isPresented: $showExport) { ExportView(store: store) }
-        .sheet(isPresented: $showBulkEditor) { BulkTextEditorView(store: store) }
         .sheet(item: Binding(
             get: { editingTemplateID.map { IdentifiedUUID(id: $0) } },
             set: { editingTemplateID = $0?.id }
@@ -56,6 +59,50 @@ struct ContentView: View {
             return true
         }
         .focusedSceneValue(\.editorStore, store)
+    }
+
+    /// 窓が縮んでも上段が潰れないように収める。
+    private func resolvedBottomHeight(in total: CGFloat) -> CGFloat {
+        let available = max(bottomMinHeight, total - topMinHeight)
+        return min(max(bottomHeight, bottomMinHeight), available)
+    }
+
+    // MARK: - 上段
+
+    private var topPane: some View {
+        HStack(spacing: 0) {
+            if showLibrary {
+                LibraryView(store: store, editingTemplateID: $editingTemplateID)
+                    .frame(width: libraryWidth)
+                PaneDivider.Vertical(width: $libraryWidth, range: 180...400)
+            }
+
+            VStack(spacing: 0) {
+                PreviewPane(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Divider()
+                transport
+            }
+            .frame(maxWidth: .infinity)
+
+            if showInspector {
+                PaneDivider.Vertical(width: $inspectorWidth, range: 240...460, trailing: true)
+                InspectorView(store: store)
+                    .frame(width: inspectorWidth)
+            }
+        }
+    }
+
+    // MARK: - 下段
+
+    @ViewBuilder
+    private var bottomPane: some View {
+        switch bottomTab {
+        case .timeline:
+            TimelineView(store: store, bottomTab: $bottomTab)
+        case .text:
+            TextClipsPane(store: store, bottomTab: $bottomTab)
+        }
     }
 
     // MARK: - 再生操作
@@ -86,7 +133,7 @@ struct ContentView: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
-        .frame(height: 38)
+        .frame(height: 36)
     }
 
     private var recordingControl: some View {
@@ -135,22 +182,34 @@ struct ContentView: View {
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
         ToolbarItem(placement: .navigation) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.16)) { showLibrary.toggle() }
+            } label: {
+                Label("素材パネル", systemImage: "sidebar.leading")
+            }
+            .help("素材とテンプレートのパネルを開閉 (⌘1)")
+            .keyboardShortcut("1", modifiers: .command)
+        }
+        ToolbarItem(placement: .navigation) {
             Button { store.openProject() } label: { Label("開く", systemImage: "folder") }
         }
         ToolbarItem {
             Button { store.save() } label: { Label("保存", systemImage: "square.and.arrow.down") }
         }
         ToolbarItem {
-            Button { showBulkEditor = true } label: {
-                Label("テキスト一括編集", systemImage: "list.bullet.rectangle")
-            }
-            .disabled(store.project.allTextClips.isEmpty)
-        }
-        ToolbarItem {
             Button { showExport = true } label: {
                 Label("書き出し", systemImage: "square.and.arrow.up")
             }
             .disabled(store.duration <= 0)
+        }
+        ToolbarItem {
+            Button {
+                withAnimation(.easeInOut(duration: 0.16)) { showInspector.toggle() }
+            } label: {
+                Label("インスペクタ", systemImage: "sidebar.trailing")
+            }
+            .help("右のパネルを開閉 (⌘2)")
+            .keyboardShortcut("2", modifiers: .command)
         }
     }
 
