@@ -104,10 +104,16 @@ struct PreviewPane: View {
 
     // MARK: - 直接操作
 
-    /// いま枠を出す対象。1 つだけ選んでいて、その時刻に映っている映像か画像。
+    /// いま枠を出す対象。1 つだけ選んでいて、その時刻に映っているもの。
     private struct EditTarget {
+        enum Content {
+            /// 映像や画像。素材の中心を動かす。
+            case media(naturalSize: CGSize)
+            /// テキスト。テンプレートが決めた位置を土台にする。
+            case text(content: CGRect)
+        }
         var clip: Clip
-        var naturalSize: CGSize
+        var content: Content
     }
 
     private var editTarget: EditTarget? {
@@ -115,13 +121,63 @@ struct PreviewPane: View {
               let id = store.selectedClipIDs.first,
               let clip = store.project.clip(id),
               clip.contains(store.currentTime),
-              let assetID = clip.content.assetID,
+              let track = store.project.track(containing: id),
+              !track.isHidden, !track.isLocked
+        else { return nil }
+
+        if let instance = clip.content.textInstance {
+            guard let template = store.project.template(instance.templateID),
+                  let raster = TextRasterizer.shared.rasterize(
+                      template: template,
+                      props: instance.resolvedProps(in: template),
+                      canvas: store.project.canvas.size),
+                  raster.rect.width > 0
+            else { return nil }
+            return EditTarget(clip: clip, content: .text(content: raster.rect))
+        }
+
+        guard let assetID = clip.content.assetID,
               let asset = store.project.asset(assetID),
               asset.kind != .audio,
               let size = asset.naturalSize,
               size.width > 0, size.height > 0
         else { return nil }
-        return EditTarget(clip: clip, naturalSize: size)
+        return EditTarget(clip: clip, content: .media(naturalSize: size))
+    }
+
+    /// キャンバス座標での配置矩形。種類ごとに計算のしかたが違う。
+    private func canvasRect(of target: EditTarget, transform: Transform2D) -> CGRect {
+        let canvas = store.project.canvas.size
+        switch target.content {
+        case .media(let size):
+            return MediaLayout.rect(naturalSize: size, transform: transform, canvas: canvas)
+        case .text(let content):
+            return OverlayLayout.rect(content: content, transform: transform, canvas: canvas)
+        }
+    }
+
+    /// 動かした結果の矩形から transform を逆に求める。
+    private func transform(of target: EditTarget, for rect: CGRect, rotation: Double) -> Transform2D {
+        let canvas = store.project.canvas.size
+        switch target.content {
+        case .media(let size):
+            return MediaLayout.transform(for: rect, naturalSize: size,
+                                         canvas: canvas, rotation: rotation)
+        case .text(let content):
+            return OverlayLayout.transform(for: rect, content: content,
+                                           canvas: canvas, rotation: rotation)
+        }
+    }
+
+    /// これより小さくはしない幅。
+    private func minimumWidth(of target: EditTarget) -> Double {
+        let canvas = store.project.canvas.size
+        switch target.content {
+        case .media(let size):
+            return size.width * MediaLayout.fitScale(size, in: canvas) * 0.02
+        case .text(let content):
+            return content.width * 0.1
+        }
     }
 
     struct HandleDrag {
@@ -140,8 +196,7 @@ struct PreviewPane: View {
     private func handles(for target: EditTarget, box: CGSize) -> some View {
         let canvas = store.project.canvas.size
         let scale = box.width / canvas.width
-        let rect = MediaLayout.rect(naturalSize: target.naturalSize,
-                                    transform: target.clip.transform, canvas: canvas)
+        let rect = canvasRect(of: target, transform: target.clip.transform)
         let frame = CGRect(x: rect.minX * scale, y: rect.minY * scale,
                            width: rect.width * scale, height: rect.height * scale)
 
@@ -198,17 +253,14 @@ struct PreviewPane: View {
                                target: EditTarget, scale: Double) -> some Gesture {
         DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.spaceName))
             .onChanged { value in
-                let canvas = store.project.canvas.size
                 let started = begin(target, kind: .corner(corner), scale: scale)
                 // 画面上の位置をキャンバス座標へ直してから計算する。
                 let point = CGPoint(x: Double(value.location.x) / scale,
                                     y: Double(value.location.y) / scale)
                 let resized = MediaLayout.resized(started.startRect, corner: corner, to: point,
-                                                  naturalSize: target.naturalSize, canvas: canvas)
-                apply(MediaLayout.transform(for: resized,
-                                            naturalSize: target.naturalSize,
-                                            canvas: canvas,
-                                            rotation: started.startTransform.rotation),
+                                                  minimumWidth: minimumWidth(of: target))
+                apply(transform(of: target, for: resized,
+                                rotation: started.startTransform.rotation),
                       to: target.clip.id)
             }
             .onEnded { _ in drag = nil }
@@ -222,9 +274,7 @@ struct PreviewPane: View {
             clipID: target.clip.id,
             kind: kind,
             startTransform: target.clip.transform,
-            startRect: MediaLayout.rect(naturalSize: target.naturalSize,
-                                        transform: target.clip.transform,
-                                        canvas: store.project.canvas.size))
+            startRect: canvasRect(of: target, transform: target.clip.transform))
         drag = started
         return started
     }

@@ -70,8 +70,7 @@ struct MediaLayoutTests {
         let target = CGPoint(x: anchor.x + (grabbed.x - anchor.x) * 1.5,
                              y: anchor.y + (grabbed.y - anchor.y) * 1.5)
 
-        let resized = MediaLayout.resized(rect, corner: corner, to: target,
-                                          naturalSize: hd, canvas: canvas)
+        let resized = MediaLayout.resized(rect, corner: corner, to: target, minimumWidth: 8)
         let movedAnchor = corner.opposite.point(in: resized)
         #expect(abs(movedAnchor.x - anchor.x) < 1e-6)
         #expect(abs(movedAnchor.y - anchor.y) < 1e-6)
@@ -83,8 +82,7 @@ struct MediaLayoutTests {
         let rect = MediaLayout.rect(naturalSize: hd, transform: .identity, canvas: canvas)
         // わざと対角線から外れた点へ引く
         let target = CGPoint(x: rect.maxX + 300, y: rect.maxY - 100)
-        let resized = MediaLayout.resized(rect, corner: .bottomRight, to: target,
-                                          naturalSize: hd, canvas: canvas)
+        let resized = MediaLayout.resized(rect, corner: .bottomRight, to: target, minimumWidth: 8)
         #expect(abs(resized.width / resized.height - rect.width / rect.height) < 1e-9)
     }
 
@@ -93,10 +91,9 @@ struct MediaLayoutTests {
         let rect = MediaLayout.rect(naturalSize: hd, transform: .identity, canvas: canvas)
         let anchor = MediaLayout.Corner.bottomRight.opposite.point(in: rect)
         let resized = MediaLayout.resized(rect, corner: .bottomRight, to: anchor,
-                                          naturalSize: hd, canvas: canvas)
-        let back = MediaLayout.transform(for: resized, naturalSize: hd, canvas: canvas)
-        #expect(back.scale >= 0.02 - 1e-9)
-        #expect(resized.width > 0)
+                                          minimumWidth: 30)
+        #expect(abs(resized.width - 30) < 1e-9, "指定した最小幅で止まる")
+        #expect(resized.height > 0)
     }
 
     @Test("引っぱったぶんだけ倍率が変わる")
@@ -109,8 +106,7 @@ struct MediaLayoutTests {
         let half = CGPoint(x: anchor.x + (grabbed.x - anchor.x) * 0.5,
                            y: anchor.y + (grabbed.y - anchor.y) * 0.5)
 
-        let resized = MediaLayout.resized(rect, corner: .bottomRight, to: half,
-                                          naturalSize: hd, canvas: canvas)
+        let resized = MediaLayout.resized(rect, corner: .bottomRight, to: half, minimumWidth: 8)
         let back = MediaLayout.transform(for: resized, naturalSize: hd, canvas: canvas)
         #expect(abs(back.scale - 0.5) < 1e-6)
     }

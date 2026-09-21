@@ -67,12 +67,11 @@ enum MediaLayout {
 
     /// 隅を掴んで動かしたときの新しい矩形。対角は動かさない。
     /// 縦横の比は保つので、掴んだ点は対角線の上に乗せる。
+    /// - Parameter minimumWidth: これより小さくはしない（キャンバス座標での幅）。
     static func resized(_ rect: CGRect,
                         corner: Corner,
                         to point: CGPoint,
-                        minimumScale: Double = 0.02,
-                        naturalSize: CGSize,
-                        canvas: CGSize) -> CGRect {
+                        minimumWidth: Double) -> CGRect {
         let anchor = corner.opposite.point(in: rect)
         let grabbed = corner.point(in: rect)
         let diagonal = CGPoint(x: grabbed.x - anchor.x, y: grabbed.y - anchor.y)
@@ -83,10 +82,8 @@ enum MediaLayout {
         let moved = CGPoint(x: point.x - anchor.x, y: point.y - anchor.y)
         var ratio = (moved.x * diagonal.x + moved.y * diagonal.y) / lengthSquared
 
-        let fit = fitScale(naturalSize, in: canvas)
-        let smallest = naturalSize.width * fit * minimumScale
-        if rect.width * ratio < smallest {
-            ratio = smallest / rect.width
+        if rect.width > 0, rect.width * ratio < minimumWidth {
+            ratio = minimumWidth / rect.width
         }
 
         let width = rect.width * ratio

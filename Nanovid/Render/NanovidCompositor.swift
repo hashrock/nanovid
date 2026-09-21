@@ -99,10 +99,12 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
             return image.transformed(by: fitTransform(for: image.extent.size, in: canvas, layer: layer))
 
         case .text(let cgImage, let rect):
-            let image = CIImage(cgImage: cgImage)
-            // キャンバス左上原点 → Core Image の左下原点へ。
-            let base = CGAffineTransform(translationX: rect.minX, y: canvas.height - rect.maxY)
-            return image.transformed(by: base.concatenating(overlayTransform(canvas: canvas, layer: layer)))
+            // 配置の計算は OverlayLayout と共有する。プレビューのハンドルが
+            // 実際に映るものとずれないようにするため。
+            return CIImage(cgImage: cgImage).transformed(
+                by: OverlayLayout.ciTransform(content: rect,
+                                              transform: layer.transform,
+                                              canvas: canvas))
         }
     }
 
@@ -120,20 +122,6 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
             .rotated(by: layer.transform.rotation)
             .scaledBy(x: scale, y: scale)
             .translatedBy(x: -size.width / 2, y: -size.height / 2)
-    }
-
-    /// テキストなど、すでにキャンバス座標で配置済みのレイヤーに対する追加変形。
-    private func overlayTransform(canvas: CGSize, layer: RenderLayer) -> CGAffineTransform {
-        let t = layer.transform
-        let dx = t.position.x * canvas.width
-        let dy = -t.position.y * canvas.height
-        guard t.scale != 1 || t.rotation != 0 || dx != 0 || dy != 0 else { return .identity }
-        let cx = canvas.width / 2, cy = canvas.height / 2
-        return CGAffineTransform.identity
-            .translatedBy(x: cx + dx, y: cy + dy)
-            .rotated(by: t.rotation)
-            .scaledBy(x: t.scale, y: t.scale)
-            .translatedBy(x: -cx, y: -cy)
     }
 
     enum CompositorError: Error {
