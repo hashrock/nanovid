@@ -58,6 +58,15 @@ struct NanovidApp: App {
                     .keyboardShortcut("d")
                 Button("削除") { store.deleteSelection() }
                     .keyboardShortcut(.delete, modifiers: .command)
+                Button("削除して詰める") { store.rippleDeleteSelection() }
+                    .keyboardShortcut(.delete, modifiers: [.command, .option])
+                Button("隙間を詰める") { store.packSelection() }
+                    .disabled(store.selectedClipIDs.count < 2)
+                Divider()
+                Button("すべて選択") { store.selectAll() }
+                    .keyboardShortcut("a")
+                Button("選択を解除") { store.selectedClipIDs = [] }
+                    .keyboardShortcut("a", modifiers: [.command, .shift])
                 Divider()
                 Button("1 フレーム戻る") { store.step(frames: -1) }
                     .keyboardShortcut(.leftArrow, modifiers: .command)

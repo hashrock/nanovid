@@ -94,6 +94,38 @@ extension EditorStore {
         selectedTrackID = project.track(containing: clipID)?.id
     }
 
+    /// すべてのクリップを選ぶ（ロックしたトラックは除く）。
+    func selectAll() {
+        selectedClipIDs = Set(project.tracks.filter { !$0.isLocked }
+                                            .flatMap { $0.clips }
+                                            .map(\.id))
+    }
+
+    /// 時間の範囲とトラックの範囲で囲って選ぶ。矩形選択の実体。
+    /// - Parameters:
+    ///   - trackIDs: 囲みに入ったトラック。表示順は呼び出し側が解決しておく。
+    ///   - additive: 既存の選択に足す（⇧ドラッグ）。
+    func selectClips(inTimeRange range: ClosedRange<Double>,
+                     trackIDs: Set<UUID>,
+                     additive: Bool,
+                     base: Set<UUID> = []) {
+        var hit: Set<UUID> = []
+        for track in project.tracks where trackIDs.contains(track.id) && !track.isLocked {
+            for clip in track.clips where clip.start < range.upperBound && clip.end > range.lowerBound {
+                hit.insert(clip.id)
+            }
+        }
+        // 幅ゼロの囲みでも、その時刻に重なっていれば拾えるようにする。
+        if hit.isEmpty, range.lowerBound == range.upperBound {
+            for track in project.tracks where trackIDs.contains(track.id) && !track.isLocked {
+                for clip in track.clips where clip.contains(range.lowerBound) {
+                    hit.insert(clip.id)
+                }
+            }
+        }
+        selectedClipIDs = additive ? base.union(hit) : hit
+    }
+
     func deleteSelection() {
         guard !selectedClipIDs.isEmpty else { return }
         let ids = selectedClipIDs
@@ -123,6 +155,87 @@ extension EditorStore {
             }
         }
         selectedClipIDs = newIDs
+    }
+
+    /// 選択したクリップを消し、空いた時間ぶん後ろを詰める。
+    /// カットで不要な区間を抜くときに、全トラックのそろいを保ったまま縮められる。
+    func rippleDeleteSelection() {
+        let ids = selectedClipIDs
+        guard !ids.isEmpty else { return }
+        let ranges = mergedRanges(of: ids)
+        guard !ranges.isEmpty else { return }
+
+        edit { p in
+            for i in p.tracks.indices {
+                p.tracks[i].clips.removeAll { ids.contains($0.id) }
+            }
+            // 後ろの範囲から順に詰める。先に前を詰めると後ろの位置がずれる。
+            for range in ranges.reversed() {
+                let length = range.upperBound - range.lowerBound
+                for i in p.tracks.indices {
+                    for j in p.tracks[i].clips.indices
+                    where p.tracks[i].clips[j].start >= range.upperBound - 1e-9 {
+                        p.tracks[i].clips[j].start -= length
+                    }
+                }
+                p.tracks.indices.forEach { p.tracks[$0].sortClips() }
+            }
+        }
+        selectedClipIDs = []
+    }
+
+    /// 選択したクリップをトラックごとに前へ詰めて、隙間をなくす。
+    /// 先頭のクリップは動かさない。
+    func packSelection() {
+        let ids = selectedClipIDs
+        guard ids.count > 1 else { return }
+        edit { p in
+            for i in p.tracks.indices {
+                let selected = p.tracks[i].clips
+                    .filter { ids.contains($0.id) }
+                    .sorted { $0.start < $1.start }
+                guard selected.count > 1 else { continue }
+
+                var cursor = selected[0].end
+                for clip in selected.dropFirst() {
+                    guard let j = p.tracks[i].clips.firstIndex(where: { $0.id == clip.id }) else { continue }
+                    p.tracks[i].clips[j].start = cursor
+                    cursor += clip.duration
+                }
+                p.tracks[i].sortClips()
+            }
+        }
+    }
+
+    /// 選択したクリップが占めている時間。重なっている部分はひとつにまとめる。
+    func mergedRanges(of ids: Set<UUID>) -> [ClosedRange<Double>] {
+        let ranges = project.tracks
+            .flatMap(\.clips)
+            .filter { ids.contains($0.id) }
+            .map { $0.start...($0.end) }
+            .sorted { $0.lowerBound < $1.lowerBound }
+        guard var current = ranges.first else { return [] }
+
+        var merged: [ClosedRange<Double>] = []
+        for range in ranges.dropFirst() {
+            if range.lowerBound <= current.upperBound + 1e-9 {
+                current = current.lowerBound...max(current.upperBound, range.upperBound)
+            } else {
+                merged.append(current)
+                current = range
+            }
+        }
+        merged.append(current)
+        return merged
+    }
+
+    /// 選択したクリップ全体が占める時間。ズームや情報表示に使う。
+    var selectionSpan: ClosedRange<Double>? {
+        let clips = project.tracks.flatMap(\.clips).filter { selectedClipIDs.contains($0.id) }
+        guard let first = clips.first else { return nil }
+        let start = clips.map(\.start).min() ?? first.start
+        let end = clips.map(\.end).max() ?? first.end
+        return start...end
     }
 
     // MARK: - 分割
@@ -189,6 +302,64 @@ extension EditorStore {
             p.tracks[targetIndex].sortClips()
             p.tracks[sourceIndex].sortClips()
         }
+    }
+
+    /// 選択したクリップをまとめて動かす。互いの位置関係は保つ。
+    /// - Parameters:
+    ///   - laneDelta: 表示上、何段ぶん上下に動かすか。
+    ///   - laneOrder: 表示順に並べたトラック ID。段の対応はここで解決する。
+    func moveClips(_ ids: Set<UUID>, deltaSeconds: Double, laneDelta: Int, laneOrder: [UUID]) {
+        let moving = project.tracks.flatMap { track in
+            track.clips.filter { ids.contains($0.id) }.map { (clip: $0, trackID: track.id) }
+        }
+        guard !moving.isEmpty else { return }
+        // ロックしたトラックのものは動かさない。
+        guard moving.allSatisfy({ pair in
+            project.tracks.first { $0.id == pair.trackID }?.isLocked == false
+        }) else { return }
+
+        // 先頭が 0 より手前へ出ないように寄せる。
+        let earliest = moving.map(\.clip.start).min() ?? 0
+        let delta = max(deltaSeconds, -earliest)
+
+        // 段の移動は、全部が移せるときだけ通す。1 つでも無理なら時間だけ動かす。
+        var targets: [UUID: UUID] = [:]
+        var laneShift = laneDelta
+        if laneShift != 0 {
+            for pair in moving {
+                guard let from = laneOrder.firstIndex(of: pair.trackID) else { laneShift = 0; break }
+                let to = from + laneShift
+                guard laneOrder.indices.contains(to),
+                      let target = project.tracks.first(where: { $0.id == laneOrder[to] }),
+                      !target.isLocked,
+                      accepts(clip: pair.clip, track: target) else { laneShift = 0; break }
+                targets[pair.clip.id] = target.id
+            }
+        }
+        if laneShift == 0 { targets = [:] }
+
+        edit { p in
+            var detached: [(clip: Clip, trackID: UUID)] = []
+            for i in p.tracks.indices {
+                let taken = p.tracks[i].clips.filter { ids.contains($0.id) }
+                p.tracks[i].clips.removeAll { ids.contains($0.id) }
+                detached.append(contentsOf: taken.map { ($0, p.tracks[i].id) })
+            }
+            for var pair in detached {
+                pair.clip.start = p.canvas.snap(max(0, pair.clip.start + delta))
+                let destination = targets[pair.clip.id] ?? pair.trackID
+                guard let i = p.tracks.firstIndex(where: { $0.id == destination }) else { continue }
+                p.tracks[i].clips.append(pair.clip)
+            }
+            p.tracks.indices.forEach { p.tracks[$0].sortClips() }
+        }
+    }
+
+    /// そのトラックにそのクリップを置けるか（映像と音声を取り違えないため）。
+    func accepts(clip: Clip, track: Track) -> Bool {
+        let isAudioOnly = clip.content.assetID
+            .flatMap { project.asset($0) }?.kind == .audio
+        return track.kind == .audio ? isAudioOnly : !isAudioOnly
     }
 
     /// 素材の残り尺を踏まえた、そのクリップで取り得る最大長。

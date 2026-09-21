@@ -26,6 +26,21 @@ struct TimelineView: View {
     @State private var drag: ClipDrag?
     @State private var dropTargetTrack: UUID?
     @State private var hoveredClipID: UUID?
+    @State private var marquee: Marquee?
+
+    /// ドラッグ中の囲み。座標はレーン表示領域（表示座標）。
+    struct Marquee {
+        var start: CGPoint
+        var current: CGPoint
+        /// ⇧ドラッグ。もとの選択に足す。
+        var additive: Bool
+        var base: Set<UUID>
+
+        var rect: CGRect {
+            CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
+                   width: abs(current.x - start.x), height: abs(current.y - start.y))
+        }
+    }
 
     private var pps: Double { store.pixelsPerSecond }
 
@@ -103,6 +118,11 @@ struct TimelineView: View {
             }
             .disabled(store.selectedClipIDs.isEmpty)
 
+            if !store.selectedClipIDs.isEmpty {
+                Divider().frame(height: 16)
+                selectionMenu
+            }
+
             Spacer()
 
             Menu {
@@ -128,6 +148,49 @@ struct TimelineView: View {
         .labelStyle(.iconOnly)
         .padding(.horizontal, 10)
         .frame(height: 34)
+    }
+
+    /// 選択中のクリップに対する操作。まとめて選んだあとの行き先をここに集める。
+    private var selectionMenu: some View {
+        Menu {
+            Button("削除して詰める") { store.rippleDeleteSelection() }
+            Button("隙間を詰める") { store.packSelection() }
+                .disabled(store.selectedClipIDs.count < 2)
+            Divider()
+            Button("選択にズーム") { zoomToSelection() }
+            Button("選択の先頭へ") {
+                if let span = store.selectionSpan { store.seek(to: span.lowerBound) }
+            }
+            Divider()
+            Button("すべて選択") { store.selectAll() }
+            Button("選択を解除") { store.selectedClipIDs = [] }
+        } label: {
+            Text(selectionSummary)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private var selectionSummary: String {
+        let count = store.selectedClipIDs.count
+        guard let span = store.selectionSpan else { return "\(count) 個" }
+        let total = store.mergedRanges(of: store.selectedClipIDs)
+            .reduce(0.0) { $0 + ($1.upperBound - $1.lowerBound) }
+        return count == 1
+            ? "1 個 · \(Format.seconds(total)) 秒"
+            : "\(count) 個 · \(Format.seconds(total)) 秒 / 範囲 \(Format.seconds(span.upperBound - span.lowerBound)) 秒"
+    }
+
+    /// 選択したクリップが画面いっぱいに入るまで寄る。
+    private func zoomToSelection() {
+        guard let span = store.selectionSpan, viewport.width > 0 else { return }
+        let length = max(span.upperBound - span.lowerBound, 0.2)
+        let target = (Double(viewport.width) - 80) / length
+        store.pixelsPerSecond = min(Self.maxZoom, max(Self.minZoom, target))
+        scrollX = max(0, TimelineScroll.contentX(forTime: span.lowerBound,
+                                                 pixelsPerSecond: pps) - 40)
     }
 
     // MARK: - トラックヘッダ
@@ -175,6 +238,7 @@ struct TimelineView: View {
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .overlay(alignment: .topLeading) { playhead }
+            .overlay(alignment: .topLeading) { marqueeOverlay }
             .background(Color(nsColor: .underPageBackgroundColor))
             // クリップのドラッグはこの空間で測る。クリップ自身は .offset で動くので、
             // ジェスチャをクリップのローカル空間で測ると位置が振動してしまう。
@@ -198,7 +262,9 @@ struct TimelineView: View {
                 .fill(laneBackground(track))
                 .frame(width: contentWidth, height: Self.laneHeight)
                 .contentShape(Rectangle())
-                .onTapGesture { store.selectedClipIDs = [] }
+                // クリックも囲みも同じジェスチャで扱う。onTapGesture を併置すると
+                // 取り合いになって囲みが始まらない。
+                .gesture(marqueeGesture)
                 .contextMenu { laneMenu(track) }
 
             ForEach(track.clips) { clip in
@@ -296,7 +362,7 @@ struct TimelineView: View {
 
         return ZStack(alignment: .leading) {
             ClipView(store: store, clip: clip, track: track,
-                     isSelected: isSelected, isDragging: drag?.clipID == clip.id)
+                     isSelected: isSelected, isDragging: isDragging(clip))
                 .gesture(moveGesture(clip: clip, track: track))
 
             // 掴み代はクリップ本体より後ろに置く＝上に重なるので、確実にこちらが先に当たる。
@@ -312,8 +378,8 @@ struct TimelineView: View {
         .frame(width: width, height: Self.laneHeight)
         .offset(x: CGFloat(TimelineScroll.contentX(forTime: preview.start,
                                                    pixelsPerSecond: pps)))
-        .offset(y: drag?.clipID == clip.id ? CGFloat(drag?.laneOffset ?? 0) : 0)
-        .zIndex(drag?.clipID == clip.id ? 10 : 0)
+        .offset(y: dragLaneOffset(for: clip))
+        .zIndex(isDragging(clip) ? 10 : 0)
         .onHover { inside in
             if inside { hoveredClipID = clip.id }
             else if hoveredClipID == clip.id { hoveredClipID = nil }
@@ -347,7 +413,8 @@ struct TimelineView: View {
                               current.mode != .move else { return }
                         let resolved = TimelineSnap.resolve(
                             pointerTime: pointer, grabOffset: current.grabOffset,
-                            targets: snapTargets(excluding: clip.id), threshold: snapThreshold,
+                            targets: snapTargets(excluding: [clip.id]),
+                            threshold: snapThreshold,
                             frameDuration: store.project.canvas.frameDuration)
                         current.deltaSeconds = resolved - base
                         drag = current
@@ -374,6 +441,8 @@ struct TimelineView: View {
         var grabOffset: Double
         /// 掴んだ瞬間のポインタの Y（表示座標）。トラック間移動の判定に使う。
         var grabY: Double
+        /// 複数選んでいるときは、掴んだもの以外も一緒に動かす。
+        var movesSelection: Bool = false
         var deltaSeconds: Double = 0
         var laneDelta: Int = 0
 
@@ -387,8 +456,24 @@ struct TimelineView: View {
         var duration: Double
     }
 
+    /// ドラッグ中に動いて見えるか。まとめて動かしているときは選択中のものすべて。
+    private func isDragging(_ clip: Clip) -> Bool {
+        guard let drag else { return false }
+        if drag.clipID == clip.id { return true }
+        return drag.mode == .move && drag.movesSelection
+            && store.selectedClipIDs.contains(clip.id)
+    }
+
+    private func dragLaneOffset(for clip: Clip) -> CGFloat {
+        isDragging(clip) ? CGFloat(drag?.laneOffset ?? 0) : 0
+    }
+
     private func previewGeometry(for clip: Clip) -> PreviewGeometry {
-        guard let drag, drag.clipID == clip.id else {
+        guard let drag, isDragging(clip) else {
+            return PreviewGeometry(start: clip.start, duration: clip.duration)
+        }
+        // 端のトリムは掴んだクリップだけに効かせる。
+        if drag.mode != .move, drag.clipID != clip.id {
             return PreviewGeometry(start: clip.start, duration: clip.duration)
         }
         switch drag.mode {
@@ -405,26 +490,92 @@ struct TimelineView: View {
         }
     }
 
+    // MARK: - 矩形選択
+
+    private var marqueeGesture: some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.laneSpaceName))
+            .onChanged { value in
+                if marquee == nil {
+                    let additive = NSEvent.modifierFlags.contains(.shift)
+                    marquee = Marquee(start: value.startLocation, current: value.location,
+                                      additive: additive,
+                                      base: additive ? store.selectedClipIDs : [])
+                }
+                marquee?.current = value.location
+                applyMarquee()
+            }
+            .onEnded { value in
+                defer { marquee = nil }
+                let moved = max(abs(value.translation.width), abs(value.translation.height))
+                if moved < 3 {
+                    // ほぼ動いていなければ、空きをクリックしたとみなして選択を解く。
+                    if !(marquee?.additive ?? false) { store.selectedClipIDs = [] }
+                } else {
+                    applyMarquee()
+                }
+            }
+    }
+
+    private func applyMarquee() {
+        guard let m = marquee else { return }
+        let a = pointerTime(m.start)
+        let b = pointerTime(m.current)
+        let lo = laneIndex(atViewportY: Double(m.start.y))
+        let hi = laneIndex(atViewportY: Double(m.current.y))
+        let touched = lanes.enumerated()
+            .filter { $0.offset >= min(lo, hi) && $0.offset <= max(lo, hi) }
+            .map(\.element.id)
+        store.selectClips(inTimeRange: min(a, b)...max(a, b),
+                          trackIDs: Set(touched),
+                          additive: m.additive, base: m.base)
+    }
+
+    /// 表示座標の y から段番号を出す。はみ出したぶんは端の段に寄せる。
+    private func laneIndex(atViewportY y: Double) -> Int {
+        let local = y - Double(Self.rulerHeight) + offsetY
+        let step = Double(Self.laneHeight + Self.laneGap)
+        let raw = Int(floor(local / step))
+        return min(max(raw, 0), max(0, lanes.count - 1))
+    }
+
+    @ViewBuilder
+    private var marqueeOverlay: some View {
+        if let m = marquee {
+            let rect = m.rect
+            Rectangle()
+                .fill(Color.accentColor.opacity(0.14))
+                .overlay(Rectangle().strokeBorder(Color.accentColor.opacity(0.85), lineWidth: 1))
+                .frame(width: max(rect.width, 1), height: max(rect.height, 1))
+                .offset(x: rect.minX, y: rect.minY)
+                .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - 移動
+
     private func moveGesture(clip: Clip, track: Track) -> some Gesture {
         DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.laneSpaceName))
             .onChanged { value in
                 guard !track.isLocked else { return }
                 let pointer = pointerTime(value.location)
                 if drag == nil {
+                    if !store.selectedClipIDs.contains(clip.id) {
+                        store.select(clipID: clip.id, extend: false)
+                    }
                     // 掴んだ基準は startLocation から取る。最初の onChanged が届く時点では
                     // ポインタが minimumDistance ぶん進んでいるので、location だと
                     // その移動量を飲み込んでカーソルから遅れてしまう。
                     drag = ClipDrag(clipID: clip.id, mode: .move,
                                     grabOffset: pointerTime(value.startLocation) - clip.start,
-                                    grabY: Double(value.startLocation.y))
-                    if !store.selectedClipIDs.contains(clip.id) {
-                        store.select(clipID: clip.id, extend: false)
-                    }
+                                    grabY: Double(value.startLocation.y),
+                                    movesSelection: store.selectedClipIDs.count > 1
+                                        && store.selectedClipIDs.contains(clip.id))
                 }
                 guard var current = drag, current.mode == .move, current.clipID == clip.id else { return }
                 let resolved = TimelineSnap.resolve(
                     pointerTime: pointer, grabOffset: current.grabOffset,
-                    targets: snapTargets(excluding: clip.id), threshold: snapThreshold,
+                    targets: snapTargets(excluding: movingIDs(current)),
+                    threshold: snapThreshold,
                     frameDuration: store.project.canvas.frameDuration)
                 current.deltaSeconds = resolved - clip.start
                 let laneStep = Double(Self.laneHeight + Self.laneGap)
@@ -434,17 +585,10 @@ struct TimelineView: View {
             .onEnded { _ in
                 defer { drag = nil }
                 guard let d = drag, d.clipID == clip.id, d.mode == .move else { return }
-                let newStart = max(0, clip.start + d.deltaSeconds)
-                let targetTrack = laneTrack(from: track, offset: d.laneDelta) ?? track
-                store.move(clipID: clip.id, toTrack: targetTrack.id, start: newStart)
+                let ids = d.movesSelection ? store.selectedClipIDs : [clip.id]
+                store.moveClips(ids, deltaSeconds: d.deltaSeconds,
+                                laneDelta: d.laneDelta, laneOrder: lanes.map(\.id))
             }
-    }
-
-    private func laneTrack(from track: Track, offset: Int) -> Track? {
-        guard let index = lanes.firstIndex(where: { $0.id == track.id }) else { return nil }
-        let target = index + offset
-        guard lanes.indices.contains(target) else { return nil }
-        return lanes[target]
     }
 
     // MARK: - スナップ
@@ -452,16 +596,22 @@ struct TimelineView: View {
     /// 吸着が効く距離。画面上 8pt ぶんを時間に直す。
     private var snapThreshold: Double { 8.0 / pps }
 
-    /// 吸着先。自分以外のクリップ端・再生ヘッド・原点。
-    private func snapTargets(excluding clipID: UUID) -> [Double] {
+    /// 吸着先。一緒に動くもの以外のクリップ端・再生ヘッド・原点。
+    /// まとめて動かしているときに相手へ吸着すると、位置関係が崩れてしまう。
+    private func snapTargets(excluding ids: Set<UUID>) -> [Double] {
         var targets: [Double] = [0, store.currentTime]
         for track in store.project.tracks {
-            for c in track.clips where c.id != clipID {
+            for c in track.clips where !ids.contains(c.id) {
                 targets.append(c.start)
                 targets.append(c.end)
             }
         }
         return targets
+    }
+
+    /// ドラッグ中に一緒に動くクリップ。
+    private func movingIDs(_ drag: ClipDrag) -> Set<UUID> {
+        drag.movesSelection ? store.selectedClipIDs : [drag.clipID]
     }
 
     /// 表示座標のポインタ位置を時刻に直す。
@@ -660,6 +810,7 @@ struct TimelineView: View {
         case "=", "+": zoomStep(1.25); return .handled
         case "-": zoomStep(0.8); return .handled
         case "f": zoomToFit(); return .handled
+        case "z": zoomToSelection(); return .handled
         default: return .ignored
         }
     }
