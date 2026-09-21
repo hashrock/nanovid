@@ -153,7 +153,7 @@ struct TimelineScrollTests {
         for newPPS in [80.0, 200.0, 600.0] {
             let next = TimelineScroll.anchoredScrollX(scrollX: scrollX, anchorX: anchorX,
                                                       oldPPS: oldPPS, newPPS: newPPS)
-            let timeUnderCursor = TimelineScroll.time(atX: anchorX, scrollX: next,
+            let timeUnderCursor = TimelineScroll.time(atViewportX: anchorX, scrollX: next,
                                                       pixelsPerSecond: newPPS)
             #expect(abs(timeUnderCursor - 7.5) < 1e-9, "\(newPPS)px/秒 でずれた")
         }
@@ -165,7 +165,7 @@ struct TimelineScrollTests {
         let next = TimelineScroll.anchoredScrollX(scrollX: 400, anchorX: 200,
                                                   oldPPS: 80, newPPS: 8)
         #expect(next == 0)
-        let timeUnderCursor = TimelineScroll.time(atX: 200, scrollX: next, pixelsPerSecond: 8)
+        let timeUnderCursor = TimelineScroll.time(atViewportX: 200, scrollX: next, pixelsPerSecond: 8)
         // 軸は保てないが、先頭より手前を映すことはない
         #expect(timeUnderCursor > 7.5)
     }
@@ -190,7 +190,7 @@ struct TimelineScrollTests {
     func handlesZeroZoom() {
         #expect(TimelineScroll.anchoredScrollX(scrollX: 10, anchorX: 5,
                                                oldPPS: 0, newPPS: 80) == 10)
-        #expect(TimelineScroll.time(atX: 100, scrollX: 0, pixelsPerSecond: 0) == 0)
+        #expect(TimelineScroll.time(atViewportX: 100, scrollX: 0, pixelsPerSecond: 0) == 0)
     }
 
     @Test("スクロール位置は内容の範囲に収まる")
@@ -204,8 +204,141 @@ struct TimelineScrollTests {
 
     @Test("画面位置から時刻へ変換できる")
     func timeAtX() {
-        #expect(TimelineScroll.time(atX: 0, scrollX: 160, pixelsPerSecond: 80) == 2)
-        #expect(TimelineScroll.time(atX: 80, scrollX: 160, pixelsPerSecond: 80) == 3)
-        #expect(TimelineScroll.time(atX: -1000, scrollX: 0, pixelsPerSecond: 80) == 0)
+        #expect(TimelineScroll.time(atViewportX: 0, scrollX: 160, pixelsPerSecond: 80) == 2)
+        #expect(TimelineScroll.time(atViewportX: 80, scrollX: 160, pixelsPerSecond: 80) == 3)
+        #expect(TimelineScroll.time(atViewportX: -1000, scrollX: 0, pixelsPerSecond: 80) == 0)
+    }
+}
+
+/// 内容座標と表示座標の対応。取り違えるとクリップと目盛りがずれる。
+struct TimelineCoordinateTests {
+
+    static let cases: [(time: Double, scrollX: Double, pps: Double)] = [
+        (0, 0, 80), (2.5, 0, 80), (2.5, 320, 80), (12.75, 1000, 190),
+        (0.04, 0, 600), (61.5, 4200, 8),
+    ]
+
+    @Test("時刻 → 内容座標 → 時刻 で元に戻る", arguments: cases)
+    func contentRoundTrip(c: (time: Double, scrollX: Double, pps: Double)) {
+        let x = TimelineScroll.contentX(forTime: c.time, pixelsPerSecond: c.pps)
+        let back = TimelineScroll.time(atContentX: x, pixelsPerSecond: c.pps)
+        #expect(abs(back - c.time) < 1e-9)
+    }
+
+    @Test("時刻 → 表示座標 → 時刻 で元に戻る", arguments: cases)
+    func viewportRoundTrip(c: (time: Double, scrollX: Double, pps: Double)) {
+        let x = TimelineScroll.viewportX(forTime: c.time, scrollX: c.scrollX, pixelsPerSecond: c.pps)
+        let back = TimelineScroll.time(atViewportX: x, scrollX: c.scrollX, pixelsPerSecond: c.pps)
+        #expect(abs(back - c.time) < 1e-9)
+    }
+
+    @Test("表示座標は内容座標からスクロール量を引いたもの", arguments: cases)
+    func viewportIsContentMinusScroll(c: (time: Double, scrollX: Double, pps: Double)) {
+        let content = TimelineScroll.contentX(forTime: c.time, pixelsPerSecond: c.pps)
+        let viewport = TimelineScroll.viewportX(forTime: c.time, scrollX: c.scrollX,
+                                                pixelsPerSecond: c.pps)
+        #expect(abs((content - c.scrollX) - viewport) < 1e-9)
+    }
+
+    @Test("クリップと目盛りと再生ヘッドが同じ位置に並ぶ")
+    func clipRulerAndPlayheadAgree() {
+        // 「2.5 秒のクリップの先頭」「目盛りの 2.5 秒」「再生ヘッドの 2.5 秒」は
+        // 画面上で同じ x になるべき。ここがずれると見た目が食い違う。
+        let pps = 190.0, scrollX = 320.0, t = 2.5
+        let clipX = TimelineScroll.contentX(forTime: t, pixelsPerSecond: pps) - scrollX
+        let tickX = TimelineScroll.viewportX(forTime: t, scrollX: scrollX, pixelsPerSecond: pps)
+        let headX = TimelineScroll.viewportX(forTime: t, scrollX: scrollX, pixelsPerSecond: pps)
+        #expect(abs(clipX - tickX) < 1e-9)
+        #expect(abs(tickX - headX) < 1e-9)
+    }
+
+    @Test("時刻 0 より手前は返さない")
+    func neverNegativeTime() {
+        #expect(TimelineScroll.time(atContentX: -500, pixelsPerSecond: 80) == 0)
+        #expect(TimelineScroll.time(atViewportX: -500, scrollX: 100, pixelsPerSecond: 80) == 0)
+    }
+}
+
+/// ドラッグ中の吸着と、振動しないことの保証。
+struct TimelineSnapTests {
+
+    private let frame = 1.0 / 30
+
+    @Test("閾値の内側なら吸着先へ寄る")
+    func snapsToNearbyTarget() {
+        let result = TimelineSnap.snap(2.48, targets: [0, 2.5, 7.0],
+                                       threshold: 0.05, frameDuration: frame)
+        #expect(result == 2.5)
+    }
+
+    @Test("いちばん近い吸着先を選ぶ")
+    func picksNearest() {
+        let result = TimelineSnap.snap(2.51, targets: [2.5, 2.6],
+                                       threshold: 0.2, frameDuration: frame)
+        #expect(result == 2.5)
+    }
+
+    @Test("閾値の外ならフレーム境界へ丸める")
+    func fallsBackToFrameGrid() {
+        let result = TimelineSnap.snap(2.48, targets: [7.0],
+                                       threshold: 0.05, frameDuration: frame)
+        // 2.48 秒は 30fps で 74.4 フレーム → 74 フレーム
+        #expect(abs(result - 74 * frame) < 1e-9)
+        #expect(abs((result / frame).rounded() - result / frame) < 1e-9)
+    }
+
+    @Test("吸着先が無くても落ちない")
+    func noTargets() {
+        let result = TimelineSnap.snap(1.234, targets: [], threshold: 0.1, frameDuration: frame)
+        #expect(abs((result / frame) - (result / frame).rounded()) < 1e-9)
+    }
+
+    @Test("同じポインタ位置なら何度計算しても同じ結果になる")
+    func resolveIsIdempotent() {
+        // ドラッグ中に同じ場所でイベントが繰り返し届いても値が動かないこと。
+        // ここが崩れるとクリップが左右に振動する。
+        let targets = [0.0, 1.0, 4.5]
+        var previous: Double?
+        for _ in 0..<10 {
+            let value = TimelineSnap.resolve(pointerTime: 3.217, grabOffset: 0.4,
+                                             targets: targets, threshold: 0.05,
+                                             frameDuration: frame)
+            if let previous { #expect(value == previous) }
+            previous = value
+        }
+    }
+
+    @Test("結果はクリップの現在位置に依存しない")
+    func resolveIgnoresCurrentPosition() {
+        // ポインタの時刻と掴んだときのズレだけで決まる。ビューが動いても影響を受けない。
+        // 5.0 - 1.2 = 3.8 は 30fps の格子上（114 フレーム）なので丸めの影響を受けない
+        let a = TimelineSnap.resolve(pointerTime: 5.0, grabOffset: 1.2,
+                                     targets: [], threshold: 0, frameDuration: frame)
+        let b = TimelineSnap.resolve(pointerTime: 5.0, grabOffset: 1.2,
+                                     targets: [], threshold: 0, frameDuration: frame)
+        #expect(a == b)
+        #expect(abs(a - 3.8) < 1e-9)
+    }
+
+    @Test("掴んだ位置ぶんのズレが保たれる")
+    func keepsGrabOffset() {
+        // クリップの真ん中(先頭から 1 秒の位置)を掴んで 8 秒の位置へ動かしたら、
+        // 先頭は 7 秒になる。
+        let start = TimelineSnap.resolve(pointerTime: 8.0, grabOffset: 1.0,
+                                         targets: [], threshold: 0, frameDuration: frame)
+        #expect(abs(start - 7.0) < 1e-9)
+    }
+
+    @Test("時刻 0 より手前へは動かせない")
+    func clampsAtZero() {
+        let start = TimelineSnap.resolve(pointerTime: 0.2, grabOffset: 1.0,
+                                         targets: [], threshold: 0, frameDuration: frame)
+        #expect(start == 0)
+    }
+
+    @Test("閾値 0 なら吸着しない")
+    func zeroThresholdDisablesSnapping() {
+        let result = TimelineSnap.snap(2.48, targets: [2.5], threshold: 0, frameDuration: frame)
+        #expect(abs(result - 2.4666666) < 1e-4)    // フレーム丸めのみ
     }
 }

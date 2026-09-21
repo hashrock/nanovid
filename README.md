@@ -16,14 +16,15 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Debug build
 ```
 
-ユニットテスト（Swift Testing、68 件）:
+ユニットテスト（Swift Testing、82 件）:
 
 ```sh
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
 ```
 
-目盛りの刻み幅・ズーム時のスクロール位置・分割／トリム・フェード計算・
-テンプレートの props 解決・プロジェクトの保存読込・合成命令の連続性などを検証している。
+目盛りの刻み幅・座標変換の往復・ドラッグの吸着と冪等性・ズーム時のスクロール位置・
+分割／トリム・フェード計算・テンプレートの props 解決・プロジェクトの保存読込・
+合成命令の連続性などを検証している。
 
 起動時にプロジェクトを開く / 動作確認用のプロジェクトを書き出す:
 
@@ -132,6 +133,26 @@ AVFoundation のビデオコンポジションは、合成対象の映像トラ�
 横スクロールは `ScrollView` ではなく自前のオフセットで持っている。カーソル位置の時刻を
 保ったままズームするには、倍率とスクロール位置を同時に決める必要があるため
 （`TimelineScroll.anchoredScrollX`）。
+
+### タイムラインの座標系
+
+扱う座標系は 2 つだけ。取り違えるとクリップと目盛りがずれるので、変換は必ず
+`TimelineScroll` を通す（`TimelineView` 内に生の掛け算を書かない）。
+
+| 座標系 | 定義 | 使う場所 |
+|---|---|---|
+| 内容座標 (content) | `x = 時刻 × pixelsPerSecond` | クリップの配置、ドロップ位置 |
+| 表示座標 (viewport) | `x = 内容座標 − scrollX` | 目盛り、再生ヘッド、ポインタ位置 |
+
+クリップのドラッグは、レーン表示領域に張った名前付き座標空間
+（`TimelineView.laneSpaceName`）でポインタの**絶対位置**を測り、掴んだ瞬間のズレ
+（`grabOffset`）を引いて移動先を決める（`TimelineSnap.resolve`）。
+
+ジェスチャ既定のローカル空間で相対移動量を測ってはいけない。ドラッグ対象は
+`.offset` で動くので、「ビューが動く → 測り直す → また動く」というフィードバックに
+なり、クリップが左右に振動する。掴んだ基準は `value.location` ではなく
+`value.startLocation` から取る（最初のイベントが届く時点でポインタは
+`minimumDistance` ぶん進んでいるため）。
 
 ## プロジェクトファイル
 

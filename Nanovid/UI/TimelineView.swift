@@ -11,6 +11,8 @@ struct TimelineView: View {
     static let rulerHeight: CGFloat = 24
     static let minZoom: Double = 8
     static let maxZoom: Double = 600
+    /// レーン表示領域の座標空間。ドラッグ中に動かない基準として使う。
+    static let laneSpaceName = "nanovid.timeline.lanes"
 
     /// 横スクロール位置(pt)。ScrollView に任せるとズーム時にカーソル位置を保てないので自前で持つ。
     @State private var scrollX: Double = 0
@@ -34,7 +36,9 @@ struct TimelineView: View {
     }
 
     private var contentWidth: CGFloat {
-        CGFloat(max(store.duration, 10) * pps) + 400
+        // 末尾にも少し余白を持たせて、終端の先へ置けるようにする。
+        CGFloat(TimelineScroll.contentX(forTime: max(store.duration, 10),
+                                        pixelsPerSecond: pps)) + 400
     }
 
     private var lanesHeight: CGFloat {
@@ -165,6 +169,9 @@ struct TimelineView: View {
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .overlay(alignment: .topLeading) { playhead }
             .background(Color(nsColor: .underPageBackgroundColor))
+            // クリップのドラッグはこの空間で測る。クリップ自身は .offset で動くので、
+            // ジェスチャをクリップのローカル空間で測ると位置が振動してしまう。
+            .coordinateSpace(.named(Self.laneSpaceName))
             .contentShape(Rectangle())
             .onContinuousHover { phase in
                 switch phase {
@@ -250,7 +257,7 @@ struct TimelineView: View {
     private var insertTime: Double {
         guard let p = hoverPoint else { return store.currentTime }
         return store.project.canvas.snap(
-            TimelineScroll.time(atX: Double(p.x), scrollX: offsetX, pixelsPerSecond: pps))
+            TimelineScroll.time(atViewportX: Double(p.x), scrollX: offsetX, pixelsPerSecond: pps))
     }
 
     private func importAndPlace(on track: Track, at time: Double) {
@@ -274,7 +281,8 @@ struct TimelineView: View {
 
     private func clipView(_ clip: Clip, in track: Track) -> some View {
         let preview = previewGeometry(for: clip)
-        let width = max(6, CGFloat(preview.duration * pps))
+        let width = max(6, CGFloat(TimelineScroll.contentX(forTime: preview.duration,
+                                                           pixelsPerSecond: pps)))
         let isSelected = store.selectedClipIDs.contains(clip.id)
         // 短いクリップでも掴み代が本体を覆い尽くさないようにする。
         let handleWidth = min(9, max(4, width / 3))
@@ -295,7 +303,8 @@ struct TimelineView: View {
             .disabled(track.isLocked)
         }
         .frame(width: width, height: Self.laneHeight)
-        .offset(x: CGFloat(preview.start * pps))
+        .offset(x: CGFloat(TimelineScroll.contentX(forTime: preview.start,
+                                                   pixelsPerSecond: pps)))
         .offset(y: drag?.clipID == clip.id ? CGFloat(drag?.laneOffset ?? 0) : 0)
         .zIndex(drag?.clipID == clip.id ? 10 : 0)
         .onHover { inside in
@@ -316,15 +325,25 @@ struct TimelineView: View {
                 if inside { NSCursor.resizeLeftRight.set() } else { NSCursor.arrow.set() }
             }
             .highPriorityGesture(
-                DragGesture(minimumDistance: 1)
+                DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.laneSpaceName))
                     .onChanged { value in
+                        let pointer = pointerTime(value.location)
+                        let base = edge == .leading ? clip.start : clip.end
                         if drag == nil {
                             drag = ClipDrag(clipID: clip.id,
-                                            mode: edge == .leading ? .trimLeft : .trimRight)
+                                            mode: edge == .leading ? .trimLeft : .trimRight,
+                                            grabOffset: pointerTime(value.startLocation) - base,
+                                            grabY: Double(value.startLocation.y))
                         }
-                        let raw = Double(value.translation.width) / pps
-                        drag?.deltaSeconds = snapped(delta: raw, clip: clip,
-                                                     edge: edge == .leading ? .start : .end)
+                        // 移動ジェスチャが先に始まっていたら手を出さない。
+                        guard var current = drag, current.clipID == clip.id,
+                              current.mode != .move else { return }
+                        let resolved = TimelineSnap.resolve(
+                            pointerTime: pointer, grabOffset: current.grabOffset,
+                            targets: snapTargets(excluding: clip.id), threshold: snapThreshold,
+                            frameDuration: store.project.canvas.frameDuration)
+                        current.deltaSeconds = resolved - base
+                        drag = current
                     }
                     .onEnded { _ in
                         defer { drag = nil }
@@ -344,6 +363,10 @@ struct TimelineView: View {
         enum Mode { case move, trimLeft, trimRight }
         var clipID: UUID
         var mode: Mode
+        /// 掴んだ瞬間の「ポインタの時刻 − 基準時刻」。以降これを引いて目標時刻を出す。
+        var grabOffset: Double
+        /// 掴んだ瞬間のポインタの Y（表示座標）。トラック間移動の判定に使う。
+        var grabY: Double
         var deltaSeconds: Double = 0
         var laneDelta: Int = 0
 
@@ -376,20 +399,30 @@ struct TimelineView: View {
     }
 
     private func moveGesture(clip: Clip, track: Track) -> some Gesture {
-        DragGesture(minimumDistance: 3)
+        DragGesture(minimumDistance: 3, coordinateSpace: .named(Self.laneSpaceName))
             .onChanged { value in
                 guard !track.isLocked else { return }
+                let pointer = pointerTime(value.location)
                 if drag == nil {
-                    drag = ClipDrag(clipID: clip.id, mode: .move)
+                    // 掴んだ基準は startLocation から取る。最初の onChanged が届く時点では
+                    // ポインタが minimumDistance ぶん進んでいるので、location だと
+                    // その移動量を飲み込んでカーソルから遅れてしまう。
+                    drag = ClipDrag(clipID: clip.id, mode: .move,
+                                    grabOffset: pointerTime(value.startLocation) - clip.start,
+                                    grabY: Double(value.startLocation.y))
                     if !store.selectedClipIDs.contains(clip.id) {
                         store.select(clipID: clip.id, extend: false)
                     }
                 }
-                guard drag?.mode == .move else { return }
-                let raw = Double(value.translation.width) / pps
-                drag?.deltaSeconds = snapped(delta: raw, clip: clip, edge: .start)
+                guard var current = drag, current.mode == .move, current.clipID == clip.id else { return }
+                let resolved = TimelineSnap.resolve(
+                    pointerTime: pointer, grabOffset: current.grabOffset,
+                    targets: snapTargets(excluding: clip.id), threshold: snapThreshold,
+                    frameDuration: store.project.canvas.frameDuration)
+                current.deltaSeconds = resolved - clip.start
                 let laneStep = Double(Self.laneHeight + Self.laneGap)
-                drag?.laneDelta = Int((Double(value.translation.height) / laneStep).rounded())
+                current.laneDelta = Int(((Double(value.location.y) - current.grabY) / laneStep).rounded())
+                drag = current
             }
             .onEnded { _ in
                 defer { drag = nil }
@@ -409,33 +442,32 @@ struct TimelineView: View {
 
     // MARK: - スナップ
 
-    private enum SnapEdge { case start, end }
+    /// 吸着が効く距離。画面上 8pt ぶんを時間に直す。
+    private var snapThreshold: Double { 8.0 / pps }
 
-    /// 近くのクリップ端・再生ヘッド・原点に吸着させる。効かない場合はフレーム境界へ丸める。
-    private func snapped(delta: Double, clip: Clip, edge: SnapEdge) -> Double {
-        let canvas = store.project.canvas
-        let base = edge == .start ? clip.start : clip.end
-        let moved = base + delta
-        let threshold = 8.0 / pps
-
+    /// 吸着先。自分以外のクリップ端・再生ヘッド・原点。
+    private func snapTargets(excluding clipID: UUID) -> [Double] {
         var targets: [Double] = [0, store.currentTime]
-        for t in store.project.tracks {
-            for c in t.clips where c.id != clip.id {
+        for track in store.project.tracks {
+            for c in track.clips where c.id != clipID {
                 targets.append(c.start)
                 targets.append(c.end)
             }
         }
-        if let near = targets.min(by: { abs($0 - moved) < abs($1 - moved) }),
-           abs(near - moved) < threshold {
-            return near - base
-        }
-        return canvas.snap(moved) - base
+        return targets
+    }
+
+    /// 表示座標のポインタ位置を時刻に直す。
+    private func pointerTime(_ location: CGPoint) -> Double {
+        TimelineScroll.time(atViewportX: Double(location.x),
+                            scrollX: offsetX, pixelsPerSecond: pps)
     }
 
     // MARK: - 再生ヘッド
 
     private var playhead: some View {
-        let x = CGFloat(store.currentTime * pps - offsetX)
+        let x = CGFloat(TimelineScroll.viewportX(forTime: store.currentTime,
+                                                 scrollX: offsetX, pixelsPerSecond: pps))
         let visible = x >= -1 && x <= viewport.width + 1
         return Rectangle()
             .fill(Color.red)
@@ -459,11 +491,12 @@ struct TimelineView: View {
     /// 再生中、ヘッドが画面外に出そうになったら表示を送る。
     private func followPlayheadIfNeeded() {
         guard store.isPlaying, viewport.width > 0 else { return }
-        let x = store.currentTime * pps - offsetX
+        let headX = TimelineScroll.contentX(forTime: store.currentTime, pixelsPerSecond: pps)
+        let x = headX - offsetX
         if x > Double(viewport.width) - 80 {
-            scrollX = min(maxScrollX, store.currentTime * pps - Double(viewport.width) * 0.25)
+            scrollX = min(maxScrollX, headX - Double(viewport.width) * 0.25)
         } else if x < 0 {
-            scrollX = max(0, store.currentTime * pps - Double(viewport.width) * 0.25)
+            scrollX = max(0, headX - Double(viewport.width) * 0.25)
         }
     }
 
@@ -628,7 +661,8 @@ struct TimelineView: View {
 
     private func handleDrop(urls: [URL], track: Track, at location: CGPoint) {
         // location はレーンの内容座標。スクロール量はすでに織り込まれている。
-        let time = store.project.canvas.snap(max(0, Double(location.x) / pps))
+        let time = store.project.canvas.snap(
+            TimelineScroll.time(atContentX: Double(location.x), pixelsPerSecond: pps))
         Task { @MainActor in
             let assets = await store.importAssets(urls: urls)
             var cursor = time
@@ -651,12 +685,14 @@ private struct RulerView: View {
         let spec = TickSpec.forRuler(pixelsPerSecond: pps)
         SwiftUI.Canvas { context, size in
             let labelColor = Color.secondary
+            // 画面に映る範囲は内容座標で [scrollX, scrollX + 表示幅]。
             let count = spec.minorCount(width: Double(size.width) + scrollX, pixelsPerSecond: pps)
             for i in 0...max(0, count) {
                 let isMajor = spec.isMajor(index: i)
                 if !isMajor && !spec.showsMinor { continue }
                 let t = spec.time(index: i)
-                let x = CGFloat(t * pps - scrollX)
+                let x = CGFloat(TimelineScroll.viewportX(forTime: t, scrollX: scrollX,
+                                                        pixelsPerSecond: pps))
                 if x < -60 { continue }
                 if x > size.width { break }
 
@@ -683,7 +719,7 @@ private struct RulerView: View {
             DragGesture(minimumDistance: 0)
                 .onChanged { value in
                     store.pause()
-                    let t = TimelineScroll.time(atX: Double(value.location.x),
+                    let t = TimelineScroll.time(atViewportX: Double(value.location.x),
                                                 scrollX: scrollX, pixelsPerSecond: pps)
                     store.seek(to: store.project.canvas.snap(t))
                 }

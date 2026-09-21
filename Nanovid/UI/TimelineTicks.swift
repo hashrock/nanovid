@@ -65,8 +65,34 @@ struct TickSpec: Equatable {
     func time(index i: Int) -> Double { Double(i) * minor }
 }
 
-/// タイムラインのスクロール位置の計算。UI から切り離してテストできるようにしてある。
+/// タイムラインの座標変換。UI から切り離してテストできるようにしてある。
+///
+/// 扱う座標系は 2 つだけ。取り違えないよう、変換は必ずここを通す。
+///
+/// - **内容座標 (content)**: タイムラインの中身そのもの。`x = 時刻 × pixelsPerSecond`。
+///   クリップのレイアウトとドロップ位置はこちら。スクロールしても値は変わらない。
+/// - **表示座標 (viewport)**: レーン表示領域の左上を原点とした画面上の位置。
+///   `x = 内容座標 − scrollX`。目盛り・再生ヘッド・ポインタ位置はこちら。
 enum TimelineScroll {
+
+    // MARK: - 時刻と座標の変換
+
+    static func contentX(forTime time: Double, pixelsPerSecond: Double) -> Double {
+        time * pixelsPerSecond
+    }
+
+    static func viewportX(forTime time: Double, scrollX: Double, pixelsPerSecond: Double) -> Double {
+        contentX(forTime: time, pixelsPerSecond: pixelsPerSecond) - scrollX
+    }
+
+    static func time(atContentX x: Double, pixelsPerSecond: Double) -> Double {
+        guard pixelsPerSecond > 0 else { return 0 }
+        return max(0, x / pixelsPerSecond)
+    }
+
+    static func time(atViewportX x: Double, scrollX: Double, pixelsPerSecond: Double) -> Double {
+        time(atContentX: x + scrollX, pixelsPerSecond: pixelsPerSecond)
+    }
 
     /// ズームしても、画面上 anchorX の位置に見えている時刻が動かないスクロール位置を返す。
     /// - Parameters:
@@ -85,9 +111,34 @@ enum TimelineScroll {
         return min(max(0, value), maxScroll)
     }
 
-    /// 画面上 x の位置に対応する時刻。
-    static func time(atX x: Double, scrollX: Double, pixelsPerSecond: Double) -> Double {
-        guard pixelsPerSecond > 0 else { return 0 }
-        return max(0, (scrollX + x) / pixelsPerSecond)
+}
+
+/// ドラッグ中の吸着。
+enum TimelineSnap {
+
+    /// desired に最も近い吸着先を返す。閾値内に無ければフレーム境界へ丸める。
+    static func snap(_ desired: Double, targets: [Double],
+                     threshold: Double, frameDuration: Double) -> Double {
+        if threshold > 0,
+           let near = targets.min(by: { abs($0 - desired) < abs($1 - desired) }),
+           abs(near - desired) < threshold {
+            return near
+        }
+        guard frameDuration > 0 else { return desired }
+        return (desired / frameDuration).rounded() * frameDuration
+    }
+
+    /// ドラッグ中の目標時刻。
+    ///
+    /// ポインタの「時刻」と掴んだ瞬間のズレだけで決まるので、
+    /// ドラッグの途中でクリップが動いても結果が変わらない。
+    /// ビューの現在位置からの相対移動量で計算すると、
+    /// 「ビューが動く → 測り直す → また動く」で振動する。
+    static func resolve(pointerTime: Double, grabOffset: Double,
+                        targets: [Double], threshold: Double,
+                        frameDuration: Double) -> Double {
+        let desired = pointerTime - grabOffset
+        return max(0, snap(desired, targets: targets,
+                           threshold: threshold, frameDuration: frameDuration))
     }
 }
