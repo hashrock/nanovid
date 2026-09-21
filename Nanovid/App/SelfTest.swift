@@ -317,11 +317,15 @@ enum SelfTest {
         p4.canvas.backgroundColor = RGBAColor(hex: "#202020")!
         let bigTitle = try template("タイトル", in: p4)
         p4.tracks[1].clips = (0..<3).map { i in
-            Clip(start: Double(i), duration: 1.0, content: .text(TextInstance(
+            var clip = Clip(start: Double(i), duration: 1.0, content: .text(TextInstance(
                 templateID: bigTitle.id,
                 props: ["title": .string(["AAAA", "MMMM", "||||"][i]),
                         "subtitle": .string("\(i) 秒台")]
             )))
+            // 範囲の端をまたぐフェードを入れる。ここを切り詰めると、
+            // 切った先から改めて立ち上がって、全体版と画が食い違う。
+            clip.fade = Fade(inDuration: 0.4, outDuration: 0.4)
+            return clip
         }
 
         let whole = dir.appendingPathComponent("04-range-whole.mp4")
@@ -329,24 +333,43 @@ enum SelfTest {
                                     settings: ExportSettings()) { _ in }
         try report(whole, expectDuration: 3.0, expectSize: p4.canvas.size)
 
+        // 範囲の頭をクリップの途中（フェードインの最中）に置く。
+        // 端をそろえてしまうと、切り詰めの経路を通らない。
         var p4r = p4
-        p4r.outputRange = OutputRange(start: 2.0, end: 3.0)
+        p4r.outputRange = OutputRange(start: 2.2, end: 3.0)
         let ranged = dir.appendingPathComponent("04-range-cut.mp4")
         try await Exporter().export(project: p4r, baseURL: nil, to: ranged,
                                     settings: ExportSettings()) { _ in }
-        try report(ranged, expectDuration: 1.0, expectSize: p4.canvas.size)
+        try report(ranged, expectDuration: 0.8, expectSize: p4.canvas.size)
 
         // 再エンコードを挟むので画素は完全には一致しない。絶対値ではなく、
         // 全体版のどの時刻といちばん近いかで判定する。
-        let cutFrame = try await frame(of: ranged, at: 0.5)
+        let cutFrame = try await frame(of: ranged, at: 0.4)
         var scores: [(time: Double, diff: Double)] = []
-        for t in [0.5, 1.5, 2.5] {
+        for t in [0.6, 1.6, 2.6] {
             scores.append((t, meanDifference(cutFrame, try await frame(of: whole, at: t))))
         }
         let detail = scores.map { String(format: "%.1fs=%.2f", $0.time, $0.diff) }.joined(separator: " ")
         let best = scores.min { $0.diff < $1.diff }!
-        guard best.time == 2.5 else { throw Fail("範囲の先頭がずれています（\(detail)）") }
-        print("  範囲書き出し ok (2.0〜3.0 秒、全体版との差 \(detail))")
+        guard best.time == 2.6 else { throw Fail("範囲の先頭がずれています（\(detail)）") }
+
+        // フェードの最中も含めて、範囲の中はどこも全体版と同じ画になること。
+        // 切り詰め方を誤ると、ここで端だけが食い違う。
+        var worst = (time: 0.0, diff: 0.0)
+        for step in 0...16 {
+            let inRange = Double(step) / 16 * 0.78
+            let diff = meanDifference(try await frame(of: ranged, at: inRange),
+                                      try await frame(of: whole, at: 2.2 + inRange))
+            if diff > worst.diff { worst = (inRange, diff) }
+        }
+        // 正しく切り出せていれば、再エンコードの誤差ぶん（実測 0.05）しか出ない。
+        // フェードの最中で切ると 0.4 前後まで広がるので、その間に線を引く。
+        guard worst.diff < 0.2 else {
+            throw Fail(String(format: "範囲の中で画が食い違います（%.2f 秒で差 %.2f）",
+                              worst.time, worst.diff))
+        }
+        print("  範囲書き出し ok (2.2〜3.0 秒、先頭合わせ \(detail)"
+              + String(format: "、範囲内の最大差 %.2f)", worst.diff))
 
         // --- 5) 保存と読み込みの往復 ---
         let projectFile = dir.appendingPathComponent("roundtrip.nanovid")

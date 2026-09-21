@@ -27,6 +27,8 @@ enum EditCommand {
     case setOutputStart(Double)
     case setOutputEnd(Double)
     case resetOutputRange
+    case setFade(inDuration: Double, outDuration: Double)
+    case setOpacity(Double)
     case addTrack(audio: Bool)
     case undo
     case redo
@@ -56,7 +58,8 @@ enum EditGen {
         "addMedia", "addText", "select", "selectInTrack", "selectAll", "delete", "duplicate",
         "rippleDelete", "pack", "copy", "cut", "paste", "split", "move",
         "moveSelection", "trimLeft", "trimRight", "extractRange",
-        "setOutputStart", "setOutputEnd", "resetOutputRange", "addTrack", "undo", "redo",
+        "setOutputStart", "setOutputEnd", "resetOutputRange", "setFade", "setOpacity",
+        "addTrack", "undo", "redo",
     ]
 
     static func commands(count: Int, using g: inout SeededGenerator) -> [EditCommand] {
@@ -77,12 +80,12 @@ enum EditGen {
         (1, { _ in .delete }),
         (1, { _ in .duplicate }),
         (1, { _ in .rippleDelete }),
-        (5, { _ in .pack }),
+        (7, { _ in .pack }),
         (1, { _ in .copy }),
         (1, { _ in .cut }),
         (2, { .paste(at: $0.time(upTo: span, grid: grid)) }),
         (2, { .split(at: $0.time(upTo: span, grid: grid)) }),
-        (2, { .move(clipIndex: $0.int(in: 0...7), trackIndex: $0.int(in: 0...3),
+        (4, { .move(clipIndex: $0.int(in: 0...7), trackIndex: $0.int(in: 0...3),
                     start: $0.time(upTo: span, grid: grid)) }),
         (1, { .moveSelection(delta: $0.double(in: -span...span), laneDelta: $0.int(in: -2...2)) }),
         (2, { .trimLeft(clipIndex: $0.int(in: 0...7), to: $0.time(upTo: span, grid: grid)) }),
@@ -94,6 +97,10 @@ enum EditGen {
         (1, { .setOutputStart($0.time(upTo: span, grid: grid)) }),
         (1, { .setOutputEnd($0.time(upTo: span, grid: grid)) }),
         (1, { _ in .resetOutputRange }),
+        // インスペクタのフェード欄と同じ操作。フェードが立たないと
+        // 「見え方が変わらない」系の性質が素通りしてしまう。
+        (3, { .setFade(inDuration: $0.double(in: 0...2), outDuration: $0.double(in: 0...2)) }),
+        (2, { .setOpacity($0.double(in: 0...1)) }),
         (1, { .addTrack(audio: $0.chance(0.4)) }),
         (2, { _ in .undo }),
         (2, { _ in .redo }),
@@ -217,6 +224,14 @@ final class EditRunner {
             store.setOutputEnd(t)
         case .resetOutputRange:
             store.resetOutputRange()
+        case .setFade(let fadeIn, let fadeOut):
+            // インスペクタと同じく、クリップの半分までに抑える。
+            store.updateSelectedClips {
+                $0.fade.inDuration = min(fadeIn, $0.duration / 2)
+                $0.fade.outDuration = min(fadeOut, $0.duration / 2)
+            }
+        case .setOpacity(let value):
+            store.updateSelectedClips { $0.opacity = value }
         case .addTrack(let audio):
             store.addTrack(kind: audio ? .audio : .video)
         case .undo:
@@ -369,11 +384,11 @@ struct EditingGeneratorTests {
 
     @Test("どの操作も一度は実際に効いている")
     func everyCommandHasAnEffect() {
-        let counts = Self.effectCounts(seeds: 0..<120, steps: 40)
+        let counts = Self.effectCounts(seeds: 0..<300, steps: 40)
         let breakdown = counts.sorted { $0.key < $1.key }
             .map { "\($0.key)=\($0.value)" }.joined(separator: " ")
         // 10 回は効いてほしい。1〜2 回だと、その経路のバグを見逃す。
-        // 実際 pack は 3 回しか効いておらず、checkpoint を外す変異を捕まえられなかった。
+        // 実際 pack は 5 回しか効いておらず、checkpoint を外す変異を捕まえられなかった。
         let thin = EditGen.allCommandNames.filter { (counts[$0] ?? 0) < 10 }
         #expect(thin.isEmpty, """
             試行が薄い操作があります: \(thin.joined(separator: ", "))

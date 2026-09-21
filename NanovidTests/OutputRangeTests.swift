@@ -79,6 +79,8 @@ struct OutputRangeTests {
     @Test("またがるクリップは切り詰められ、素材内の開始位置もずれる")
     func cropAdjustsSourceStart() throws {
         var project = makeProject()
+        // フェードは邪魔なので外す。フェードの扱いは別のテストで見る。
+        project.tracks[0].clips[0].fade = .none
         project.outputRange = OutputRange(start: 1, end: 3)
         let cropped = project.croppedToOutputRange()
         let clip = try #require(cropped.tracks[0].clips.first)
@@ -93,14 +95,32 @@ struct OutputRangeTests {
         }
     }
 
-    @Test("切り落とした端のフェードは縮む")
-    func cropShrinksFades() throws {
+    @Test("フェードの途中では端を落とさない")
+    func cropKeepsClipsWhoseFadeWouldBeCut() throws {
         var project = makeProject()
-        // A(0-4, フェード 0.5/0.5) の頭 0.2 秒と尻 1 秒を落とす。
+        // A(0-4, フェード 0.5/0.5)。頭を 0.2 秒落とすとフェードインの最中になる。
         project.outputRange = OutputRange(start: 0.2, end: 3.0)
         let clip = try #require(project.croppedToOutputRange().tracks[0].clips.first)
-        #expect(abs(clip.fade.inDuration - 0.3) < 1e-9)
-        #expect(clip.fade.outDuration == 0, "尻を 1 秒落としたのでフェードアウトは残らない")
+        // 切ると、切った先から改めて 0 から立ち上がってしまう。だから切らない。
+        #expect(clip.start == 0)
+        #expect(abs(clip.fade.inDuration - 0.5) < 1e-9)
+        // 尻は 1 秒落とす。フェードアウト(0.5)より長いので、切っても見え方は変わらない。
+        #expect(abs(clip.duration - 3.0) < 1e-9)
+        #expect(clip.fade.outDuration == 0)
+    }
+
+    @Test("フェードより外側なら端を落とす")
+    func cropTrimsBeyondTheFade() throws {
+        var project = makeProject()
+        // A(0-4, フェード 0.5/0.5) の頭 1 秒を落とす。フェードインは済んでいる。
+        project.outputRange = OutputRange(start: 1.0, end: 4.0)
+        let clip = try #require(project.croppedToOutputRange().tracks[0].clips.first)
+        #expect(clip.start == 1.0)
+        #expect(abs(clip.duration - 3.0) < 1e-9)
+        #expect(clip.fade.inDuration == 0)
+        if case .media(_, let sourceStart) = clip.content {
+            #expect(abs(sourceStart - 3.0) < 1e-9, "素材の読み出し位置も 1 秒進む")
+        }
     }
 
     @Test("範囲を決めていなければ切り出しても中身は変わらない")

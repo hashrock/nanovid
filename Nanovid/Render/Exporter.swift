@@ -182,17 +182,21 @@ final class Exporter {
         writer.startSession(atSourceTime: outputStart.cmTime)
 
         let total = max(outputEnd - outputStart, 0.001)
-        async let videoDone: Void = pump(input: videoInput, output: videoOutput,
-                                         label: "video", skipBefore: outputStart) { pts in
+        async let videoDone: Void = pump(input: videoInput, output: videoOutput, label: "video",
+                                         skipBefore: outputStart, stopAfter: outputEnd) { pts in
             progress(min(1, max(0, pts - outputStart) / total))
         }
         async let audioDone: Void = {
             guard let audioInput, let audioOutput else { return }
             try await pump(input: audioInput, output: audioOutput, label: "audio",
-                           skipBefore: outputStart, onProgress: nil)
+                           skipBefore: outputStart, stopAfter: outputEnd, onProgress: nil)
         }()
 
         _ = try await (videoDone, audioDone)
+
+        // 範囲の終わりで閉じる。端にかかるクリップは切らずに残してあるので、
+        // 合成そのものは範囲より先まで続いていることがある。
+        writer.endSession(atSourceTime: outputEnd.cmTime)
 
         if cancelled {
             writer.cancelWriting()
@@ -212,12 +216,15 @@ final class Exporter {
     }
 
     /// 1 系統ぶんのサンプルを読んで書く。
-    /// - Parameter skipBefore: この時刻より前のサンプルは捨てる。
-    ///   セッション開始より手前を渡さないことで、出力の頭をそろえる。
+    /// - Parameters:
+    ///   - skipBefore: この時刻より前のサンプルは捨てる。
+    ///     セッション開始より手前を渡さないことで、出力の頭をそろえる。
+    ///   - stopAfter: この時刻を過ぎたら読むのをやめる。
     private func pump(input: AVAssetWriterInput,
                       output: AVAssetReaderOutput,
                       label: String,
                       skipBefore: Double,
+                      stopAfter: Double,
                       onProgress: (@Sendable (Double) -> Void)?) async throws {
         let queue = DispatchQueue(label: "nanovid.export.\(label)")
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -236,6 +243,11 @@ final class Exporter {
                     }
                     let pts = CMSampleBufferGetPresentationTimeStamp(sample).secondsOrZero
                     if pts < skipBefore - 1e-9 { continue }
+                    if pts > stopAfter - 1e-9 {
+                        input.markAsFinished()
+                        cont.resume()
+                        return
+                    }
                     if !input.append(sample) {
                         input.markAsFinished()
                         cont.resume(throwing: ExportError.writer(label))

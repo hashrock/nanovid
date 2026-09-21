@@ -219,19 +219,28 @@ extension Project {
         copy.tracks = tracks.map { track in
             var cropped = track
             cropped.clips = track.clips.compactMap { clip in
-                let head = max(clip.start, from)
-                let tail = min(clip.end, to)
-                guard tail - head > 1e-9 else { return nil }
+                // 範囲にまったくかからないものだけを落とす。
+                guard min(clip.end, to) - max(clip.start, from) > 1e-9 else { return nil }
+
+                // 端を落とすのは、フェードが終わったあとでだけ。
+                //
+                // Fade はクリップの端からの長さしか持たないので、途中から始まる
+                // フェードを表せない。フェードの最中で切ると、切った先から改めて
+                // 0 から立ち上がってしまい、同じ時刻の見え方が変わる
+                // （プレビューと書き出しが食い違う）。
+                // 切らずに残しても、余分に描くのはフェードの長さぶんだけで済む。
+                let wantHead = max(0, from - clip.start)
+                let headCut = wantHead >= clip.fade.inDuration ? wantHead : 0
+                let wantTail = max(0, clip.end - to)
+                let tailCut = wantTail >= clip.fade.outDuration ? wantTail : 0
 
                 var cut = clip
-                let headCut = head - clip.start
-                let tailCut = clip.end - tail
-                cut.start = head
-                cut.duration = tail - head
+                cut.start = clip.start + headCut
+                cut.duration = clip.duration - headCut - tailCut
                 if case .media(let assetID, let sourceStart) = clip.content {
                     cut.content = .media(assetID: assetID, sourceStart: sourceStart + headCut)
                 }
-                // フェードはクリップの端からの長さ。切り落とした端のぶんだけ縮める。
+                // 落とした端のぶんフェードを縮める。上の条件から、縮むときは 0 になる。
                 cut.fade = Fade(inDuration: max(0, clip.fade.inDuration - headCut),
                                 outDuration: max(0, clip.fade.outDuration - tailCut))
                 return cut
