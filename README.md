@@ -11,10 +11,16 @@ Mac ネイティブの軽量な動画編集ツール。
 ## ビルドと実行
 
 ```sh
+Scripts/run.sh                # ビルドして起動
+Scripts/run.sh --demo         # テキストを並べたデモを開いて起動
+Scripts/run.sh movie.nanovid  # 指定したプロジェクトを開いて起動
+
 open Nanovid.xcodeproj        # Xcode から ⌘R
-# もしくは
-xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Debug build
 ```
+
+`Scripts/run.sh --help` で他のオプション（`--release` / `--no-build`）も出る。
+すでに起動している nanovid は終了させてから開き直すので、作り直したビルドが
+確実に立ち上がる。
 
 ユニットテスト（Swift Testing、82 件）:
 
@@ -46,6 +52,9 @@ Nanovid --write-demo <出力ディレクトリ>     # テキストを並べた�
 `Scripts/` にある補助スクリプト。どちらも macOS の許可が要る。
 
 ```sh
+# ビルドして起動する
+Scripts/run.sh [--demo|--release|--no-build] [プロジェクト]
+
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png
 
