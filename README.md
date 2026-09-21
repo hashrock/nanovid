@@ -16,14 +16,14 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Debug build
 ```
 
-ユニットテスト（Swift Testing、57 件）:
+ユニットテスト（Swift Testing、68 件）:
 
 ```sh
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
 ```
 
-目盛りの刻み幅・分割／トリム・フェード計算・テンプレートの props 解決・
-プロジェクトの保存読込・合成命令の連続性などを検証している。
+目盛りの刻み幅・ズーム時のスクロール位置・分割／トリム・フェード計算・
+テンプレートの props 解決・プロジェクトの保存読込・合成命令の連続性などを検証している。
 
 描画から書き出しまでを GUI なしで通すテスト:
 
@@ -41,7 +41,7 @@ Nanovid/
     CoreTypes.swift       CanvasSpec / RGBAColor / Transform2D / Fade
     Project.swift         Project → Track → Clip
     TextTemplate.swift    テンプレート・props・ノード定義
-    BuiltinTemplates.swift 同梱テンプレート（字幕・タイトル）
+    BuiltinTemplates.swift 同梱テンプレート（字幕・シンプル字幕・テロップ・タイトル）
   Render/     AVFoundation への変換と描画
     CompositionBuilder.swift  Project → AVMutableComposition + AVVideoComposition
     NanovidCompositor.swift   AVVideoCompositing 実装（Core Image 合成）
@@ -55,7 +55,7 @@ Nanovid/
     AssetCache.swift      AVURLAsset の使い回し
     AudioRecorder.swift   マイク録音（WAV 直書き）
   UI/         SwiftUI
-    TimelineTicks.swift   目盛りの刻み幅（純ロジック・テスト対象）
+    TimelineTicks.swift   目盛りの刻み幅とスクロール計算（純ロジック・テスト対象）
   Resources/
     blank.mp4   16×16・60秒の黒素材（後述）
 ```
@@ -102,9 +102,29 @@ AVFoundation のビデオコンポジションは、合成対象の映像トラ�
 | 削除 | Delete / ⌘Delete |
 | 1 フレーム移動 | ← → （Shift で 10 フレーム）|
 | 1 秒移動 | J / L |
+| ズーム | + / - 、全体を表示は F |
 
 修飾キーなしのキーはタイムラインにフォーカスがあるときだけ効く。テキスト入力中に
 誤発火しないようにするため。
+
+### タイムラインのマウス操作
+
+| 操作 | 動作 |
+|---|---|
+| ホイール / 二本指スワイプ | パン（縦に動かす先が無ければ横へ回す）|
+| ⇧ + ホイール | 横パン固定 |
+| ⌘ または ⌥ + ホイール | ズーム（カーソル位置の時刻が動かない）|
+| ピンチ | ズーム |
+| クリップの本体をドラッグ | 移動（上下でトラック間も移動）|
+| クリップの端をドラッグ | 長さを調整（素材の残り尺で頭打ち）|
+| 目盛りをドラッグ | シーク |
+| レーンを右クリック | その位置にテキスト・素材を追加 |
+
+ドラッグ中は他のクリップの端・再生ヘッド・原点に吸着する。効かないときはフレーム境界へ丸める。
+
+横スクロールは `ScrollView` ではなく自前のオフセットで持っている。カーソル位置の時刻を
+保ったままズームするには、倍率とスクロール位置を同時に決める必要があるため
+（`TimelineScroll.anchoredScrollX`）。
 
 ## プロジェクトファイル
 

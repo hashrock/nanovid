@@ -20,7 +20,9 @@ struct TemplateEditorView: View {
                 ProgressView()
             }
         }
-        .frame(width: 940, height: 600)
+        // シートを広げられるようにする。列の幅もユーザーが調整できる。
+        .frame(minWidth: 1000, idealWidth: 1280, maxWidth: .infinity,
+               minHeight: 680, idealHeight: 880, maxHeight: .infinity)
         .onAppear {
             draft = store.project.template(templateID)
             selectedNodeID = draft?.nodes.last?.id
@@ -32,20 +34,20 @@ struct TemplateEditorView: View {
         VStack(spacing: 0) {
             header(template)
             Divider()
-            HStack(spacing: 0) {
+            HSplitView {
                 nodeColumn(template)
-                Divider()
-                VStack(spacing: 0) {
+                    .frame(minWidth: 170, idealWidth: 210, maxWidth: 340)
+                VSplitView {
                     TemplatePreview(template: template,
                                     props: previewProps,
                                     canvas: store.project.canvas)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    Divider()
+                        .frame(minWidth: 360, minHeight: 240, idealHeight: 460)
                     propsColumn(template)
-                        .frame(height: 170)
+                        .frame(minHeight: 150, idealHeight: 240)
                 }
-                Divider()
+                .frame(minWidth: 380)
                 inspectorColumn(template)
+                    .frame(minWidth: 290, idealWidth: 320, maxWidth: 460)
             }
             Divider()
             footer
@@ -108,7 +110,6 @@ struct TemplateEditorView: View {
             .font(.caption)
             .padding(8)
         }
-        .frame(width: 190)
     }
 
     private func iconFor(_ node: TemplateNode) -> String {
@@ -270,7 +271,6 @@ struct TemplateEditorView: View {
                     .padding(20)
             }
         }
-        .frame(width: 280)
     }
 
     // MARK: - フッタ
@@ -467,14 +467,28 @@ private struct NodeInspector: View {
             .pickerStyle(.segmented)
             .font(.caption)
 
-            numberRow("縁取り", spec.strokeWidth, range: 0...0.2) { v in
+            numberRow("縁取り", spec.strokeWidth, range: 0...0.25) { v in
                 update { $0.strokeWidth = $1 } (spec, v)
+            }
+            if spec.strokeWidth > 0 {
+                ValueRefEditor(label: "縁の色", type: .color, template: template,
+                               value: Binding(
+                                get: { spec.strokeColor },
+                                set: { v in update { $0.strokeColor = $1 } (spec, v) }
+                               ))
             }
             numberRow("影のぼかし", spec.shadowRadius, range: 0...0.03) { v in
                 update { $0.shadowRadius = $1 } (spec, v)
             }
             numberRow("影のずれ", spec.shadowOffset.y, range: -0.02...0.02) { v in
                 update { $0.shadowOffset.y = $1 } (spec, v)
+            }
+            if spec.shadowRadius > 0 {
+                ValueRefEditor(label: "影の色", type: .color, template: template,
+                               value: Binding(
+                                get: { spec.shadowColor },
+                                set: { v in update { $0.shadowColor = $1 } (spec, v) }
+                               ))
             }
         }
     }
