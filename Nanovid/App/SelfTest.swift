@@ -6,11 +6,13 @@ import Foundation
 /// 2) 1 の出力と生成した WAV を素材に、映像＋音声＋テロップを重ねて書き出す
 enum SelfTest {
 
-    /// `Nanovid --write-demo <ディレクトリ>` で、動作確認用のプロジェクトを書き出して終了する。
+    /// `Nanovid --write-demo <ディレクトリ> [音声ファイル]` で、動作確認用の
+    /// プロジェクトを書き出して終了する。音声を渡すと音声トラックに載せる。
     static func writeDemoIfRequested() -> Bool {
         let args = CommandLine.arguments
         guard let idx = args.firstIndex(of: "--write-demo"), args.count > idx + 1 else { return false }
         let dir = URL(fileURLWithPath: args[idx + 1])
+        let audio: URL? = args.count > idx + 2 ? URL(fileURLWithPath: args[idx + 2]) : nil
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             var p = Project.starter()
@@ -28,6 +30,27 @@ enum SelfTest {
                     content: .text(TextInstance(templateID: template.id,
                                                 props: ["text": .string(text)]))))
             }
+            if let audio {
+                let sem = DispatchSemaphore(value: 0)
+                var asset: MediaAsset?
+                Task.detached {
+                    asset = try? await AssetCache.shared.inspect(url: audio)
+                    sem.signal()
+                }
+                sem.wait()
+                if let asset, let track = p.tracks.firstIndex(where: { $0.kind == .audio }) {
+                    p.assets.append(asset)
+                    p.tracks[track].clips = [
+                        Clip(name: asset.displayName, start: 0, duration: asset.duration,
+                             content: .media(assetID: asset.id, sourceStart: 0))
+                    ]
+                    // 音声を試すときはテロップが邪魔なので消しておく。
+                    for i in p.tracks.indices where p.tracks[i].kind == .video {
+                        p.tracks[i].clips = []
+                    }
+                }
+            }
+
             let url = dir.appendingPathComponent("demo.nanovid")
             try ProjectIO.save(p, to: url)
             print(url.path)
@@ -36,6 +59,54 @@ enum SelfTest {
             FileHandle.standardError.write("FAIL: \(error.localizedDescription)\n".data(using: .utf8)!)
             exit(1)
         }
+    }
+
+    /// `Nanovid --transcribe <音声ファイル> [言語]` で書き起こしだけ試して終了する。
+    /// 認識の具合と区切り方を、GUI を触らずに確かめるため。
+    static func transcribeIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let idx = args.firstIndex(of: "--transcribe"), args.count > idx + 1 else { return false }
+        guard #available(macOS 26.0, *) else {
+            FileHandle.standardError.write("FAIL: \(SubtitleGeneration.requirement)\n".data(using: .utf8)!)
+            exit(1)
+        }
+        let url = URL(fileURLWithPath: args[idx + 1])
+        let locale = Locale(identifier: args.count > idx + 2 ? args[idx + 2] : "ja-JP")
+
+        let sem = DispatchSemaphore(value: 0)
+        var failure: Error?
+        Task.detached {
+            do {
+                var project = Project.starter()
+                let asset = try await AssetCache.shared.inspect(url: url)
+                project.assets = [asset]
+                guard let track = project.tracks.firstIndex(where: { $0.kind == .audio }) else { return }
+                project.tracks[track].clips = [
+                    Clip(start: 0, duration: asset.duration,
+                         content: .media(assetID: asset.id, sourceStart: 0))
+                ]
+
+                let words = try await Transcriber().transcribe(
+                    project: project, baseURL: nil, locale: locale) { _ in }
+                let lines = SubtitleSegmentation.lines(from: words)
+
+                print("語 \(words.count) 個 → 字幕 \(lines.count) 枚")
+                for line in lines {
+                    print(String(format: "  %@ (%.1f秒) %@",
+                                 Format.timecode(line.start, fps: 30),
+                                 line.duration, line.text))
+                }
+            } catch {
+                failure = error
+            }
+            sem.signal()
+        }
+        sem.wait()
+        if let failure {
+            FileHandle.standardError.write("FAIL: \(failure.localizedDescription)\n".data(using: .utf8)!)
+            exit(1)
+        }
+        exit(0)
     }
 
     static func runIfRequested() -> Bool {

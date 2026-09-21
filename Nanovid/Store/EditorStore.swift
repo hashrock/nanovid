@@ -27,6 +27,10 @@ final class EditorStore {
 
     var buildError: String?
     var isBuilding = false
+    /// 字幕の自動生成の進み具合。nil なら動いていない。
+    var subtitleProgress: Double?
+    /// 動いている書き起こし。中止のために持っておく（型は macOS 26 限定なので AnyObject）。
+    @ObservationIgnored var transcriberHandle: AnyObject?
 
     // 取り消しの可否。スタック自体は観測の対象外なので、
     // メニューの有効・無効が追従するようここに写しておく。

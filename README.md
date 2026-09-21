@@ -22,7 +22,7 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 すでに起動している nanovid は終了させてから開き直すので、作り直したビルドが
 確実に立ち上がる。
 
-ユニットテスト（Swift Testing、126 件）:
+ユニットテスト（Swift Testing、141 件）:
 
 ```sh
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
@@ -36,7 +36,8 @@ xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは �
 
 ```sh
 Nanovid --open path/to/project.nanovid
-Nanovid --write-demo <出力ディレクトリ>     # テキストを並べたデモを作って終了
+Nanovid --write-demo <出力ディレクトリ> [音声]  # デモを作って終了（音声を渡すと載せる）
+Nanovid --transcribe <音声ファイル> [言語]     # 書き起こしだけ試して終了
 ```
 
 描画から書き出しまでを GUI なしで通すテスト:
@@ -88,6 +89,7 @@ Nanovid/
     Project.swift         Project → Track → Clip
     TextTemplate.swift    テンプレート・props・ノード定義
     BuiltinTemplates.swift 同梱テンプレート（字幕・シンプル字幕・テロップ・タイトル）
+    SubtitleSegmentation.swift 書き起こしを字幕の枚数に割る（純ロジック・テスト対象）
   Render/     AVFoundation への変換と描画
     CompositionBuilder.swift  Project → AVMutableComposition + AVVideoComposition
     NanovidCompositor.swift   AVVideoCompositing 実装（Core Image 合成）
@@ -140,6 +142,40 @@ AVFoundation のビデオコンポジションは、合成対象の映像トラ�
 - `FontSpec.relativeSize` — キャンバス高さに対する比
 
 そのため 1920×1080 で作ったテンプレートを 1080×1920 に切り替えても崩れない。
+
+## 字幕の自動生成
+
+タイムラインの音声を端末内で書き起こして、字幕クリップとして並べる。
+ネットワークも API キーも要らない。macOS 26 以降でのみ有効
+（`SubtitleGeneration.isAvailable`。アプリ全体の対象 OS は上げていない）。
+
+字幕タブの「自動生成」から、言語とテンプレートを選んで実行する。
+
+```
+語 70 個 → 字幕 5 枚
+  00:00.00 (2.2秒) 今回はナノビドーという動画
+  00:02.06 (2.0秒) 編集ツールの話をします。
+  00:04.06 (3.2秒) まずはタイムラインにクリップを並べます。
+  00:07.13 (2.4秒) それから字幕をつけていきます。
+  00:09.25 (2.3秒) 書き出しは MP4です。
+```
+
+音声は合成済みのミックスから直接 PCM を引いて `SpeechAnalyzer` へ流す。書き起こしの
+ために音声ファイルを書き出す必要がない（中間ファイルを作らない方針のまま）。
+
+結果は新しいトラック「字幕（自動）」に入れる。既存のテロップを壊さないし、
+気に入らなければトラックごと消せる。打ち直しは字幕タブの表でそのままできる。
+
+### 区切り方
+
+`SubtitleSegmentation` が 2 段構えで割る。文字数だけで前から詰めると、
+最後に 2 文字の端数が残ったりするため。
+
+1. **意味のまとまりに切る** — 文末（。！？）、一定以上の無音、出しっぱなしの上限
+2. **長すぎるものを均等に割る** — 先に何枚に割るかを決めてから目標の文字数を出し、
+   読点があればそこを優先する
+
+合成音声のように間が無い素材でも、句読点を手がかりに文の切れ目で割れる。
 
 ## 複数選択でできること
 

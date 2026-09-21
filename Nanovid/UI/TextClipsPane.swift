@@ -10,6 +10,7 @@ struct TextClipsPane: View {
 
     @State private var templateFilter: UUID?
     @State private var checked: Set<UUID> = []
+    @State private var transcriptionLocale = Locale(identifier: "ja-JP")
 
     private var rows: [Clip] {
         store.project.allTextClips
@@ -76,6 +77,10 @@ struct TextClipsPane: View {
             .fixedSize()
             .help("再生ヘッドの位置にテキストを足す")
 
+            if SubtitleGeneration.isAvailable {
+                generateControl
+            }
+
             Spacer()
 
             if checked.isEmpty {
@@ -89,6 +94,47 @@ struct TextClipsPane: View {
         .buttonStyle(.borderless)
         .padding(.horizontal, 10)
         .frame(height: 34)
+    }
+
+    /// 音声からの自動生成。進行中は進み具合と中止に差し替わる。
+    @ViewBuilder
+    private var generateControl: some View {
+        if let value = store.subtitleProgress {
+            ProgressView(value: value)
+                .progressViewStyle(.linear)
+                .frame(width: 110)
+            Text("書き起こし中 \(Int(value * 100))%")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("中止") { store.cancelSubtitleGeneration() }
+                .font(.caption)
+        } else {
+            Menu {
+                Picker("言語", selection: $transcriptionLocale) {
+                    Text("日本語").tag(Locale(identifier: "ja-JP"))
+                    Text("English").tag(Locale(identifier: "en-US"))
+                }
+                Divider()
+                Section("このテンプレートで作る") {
+                    ForEach(store.project.textTemplates) { template in
+                        Button(template.name) { generate(with: template) }
+                    }
+                }
+            } label: {
+                Label("自動生成", systemImage: "waveform.badge.mic")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .disabled(store.duration <= 0)
+            .help("タイムラインの音声を端末内で書き起こして字幕にする")
+        }
+    }
+
+    private func generate(with template: TextTemplate) {
+        let locale = transcriptionLocale
+        Task { @MainActor in
+            await store.generateSubtitles(locale: locale, templateID: template.id)
+        }
     }
 
     /// チェックした行へまとめて適用する操作。
