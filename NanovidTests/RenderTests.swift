@@ -1,6 +1,8 @@
 import Testing
 import Foundation
 import AVFoundation
+import ImageIO
+import UniformTypeIdentifiers
 @testable import Nanovid
 
 /// Project から AVFoundation へ落とすところ。
@@ -128,6 +130,62 @@ struct CompositionBuilderTests {
             .first { $0.timeRange.containsTime(CMTime(seconds: 1, preferredTimescale: 600)) }
         try #require(instruction != nil)
         #expect(instruction!.layers.count == 2)
+    }
+
+    @Test("画像はキャンバスに収まる大きさで置かれる")
+    func imageIsPlacedByMediaLayout() async throws {
+        // 以前はラスタライズ済みテキストと同じ経路に載せており、画素をそのまま
+        // 左下へ貼っていた。キャンバスと解像度が違う画像は縮んで隅に寄り、
+        // プレビューの枠（MediaLayout）とも食い違っていた。
+        let url = try #require(makeTestPNG(width: 1456, height: 816))
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        var project = Project.starter()
+        let asset = try await AssetCache.shared.inspect(url: url)
+        #expect(asset.naturalSize == CGSize(width: 1456, height: 816))
+        project.assets = [asset]
+        project.tracks[0].clips = [Clip(start: 0, duration: 2,
+                                        content: .media(assetID: asset.id, sourceStart: 0))]
+
+        let built = try await CompositionBuilder.build(project: project, baseURL: nil)
+        let instruction = try #require(built.videoComposition.instructions
+            .compactMap { $0 as? NanovidInstruction }
+            .first { $0.timeRange.containsTime(CMTime(seconds: 1, preferredTimescale: 600)) })
+        let layer = try #require(instruction.layers.first)
+        guard case .still(let image) = layer.source else {
+            Issue.record("画像レイヤーになっていない")
+            return
+        }
+        // 元の画素のまま渡し、拡大はコンポジタが MediaLayout と同じ式で行う。
+        #expect(image.width == 1456)
+        #expect(image.height == 816)
+
+        let rect = MediaLayout.rect(naturalSize: CGSize(width: image.width, height: image.height),
+                                    transform: .identity,
+                                    canvas: project.canvas.size)
+        #expect(abs(rect.width - 1920) < 0.01)
+        #expect(abs(rect.midX - 960) < 0.01)
+        #expect(abs(rect.midY - 540) < 0.01)
+    }
+
+    /// 単色で塗った PNG を一時ファイルに書き出す。
+    private func makeTestPNG(width: Int, height: Int) -> URL? {
+        guard let context = CGContext(data: nil, width: width, height: height,
+                                      bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return nil }
+        context.setFillColor(CGColor(red: 0.2, green: 0.4, blue: 0.8, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        guard let image = context.makeImage() else { return nil }
+
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nanovid-test-\(UUID().uuidString).png")
+        guard let dest = CGImageDestinationCreateWithURL(url as CFURL, UTType.png.identifier as CFString,
+                                                         1, nil) else { return nil }
+        CGImageDestinationAddImage(dest, image, nil)
+        guard CGImageDestinationFinalize(dest) else { return nil }
+        return url
     }
 }
 

@@ -162,6 +162,8 @@ enum SelfTest {
                     for layer in hit.layers {
                         switch layer.source {
                         case .media(let id, _): print("    映像 trackID=\(id)")
+                        case .still(let image):
+                            print("    画像 \(image.width)x\(image.height)")
                         case .text(let image, let rect):
                             print("    テキスト \(image.width)x\(image.height) at \(Int(rect.minX)),\(Int(rect.minY))")
                         }
