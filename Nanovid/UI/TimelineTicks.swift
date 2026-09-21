@@ -142,3 +142,41 @@ enum TimelineSnap {
                            threshold: threshold, frameDuration: frameDuration))
     }
 }
+
+/// ホイール入力の振り分け。
+///
+/// タイムラインは縦よりずっと横に長い。素直に縦へ割り当てるだけだと、
+/// レーンがあと数 pt しか動かせない状態でホイールが死んでしまい、
+/// 画面外のクリップまで辿りつけなくなる。
+enum TimelineWheel {
+
+    /// 行単位（普通のマウスホイール）1 行ぶんの移動量(pt)。
+    /// 1 ノッチはたいてい 3 行なので、1 ノッチで 120pt 動く。
+    static let lineHeight: Double = 40
+
+    /// ホイールの入力を、横(dx)・縦(dy)の移動量(pt)に振り分ける。
+    ///
+    /// - Parameters:
+    ///   - deltaX, deltaY: `NSEvent.scrollingDelta`。画面の動く向きなので符号は反転させる。
+    ///   - precise: トラックパッドのように画素単位か。行単位なら実寸に直す。
+    ///   - shift: ⇧ が押されているか。macOS の慣習どおり軸を入れ替えて横だけにする。
+    ///   - scrollY, maxScrollY: いまの縦位置と上限。縦で使い切れないぶんを横へ回すのに使う。
+    static func route(deltaX: Double, deltaY: Double, precise: Bool, shift: Bool,
+                      scrollY: Double, maxScrollY: Double) -> (dx: Double, dy: Double) {
+        let scale = precise ? 1.0 : lineHeight
+        let dx = -deltaX * scale
+        let dy = -deltaY * scale
+
+        // ⇧ は横パン固定。行単位のイベントは macOS が先に軸を入れ替えて
+        // deltaX に載せてくるので、大きいほうを拾う。
+        if shift { return (dx: dx != 0 ? dx : dy, dy: 0) }
+
+        // 横の入力がある（トラックパッドの二本指など）ならそのまま両方に効かせる。
+        guard dx == 0, dy != 0 else { return (dx: dx, dy: dy) }
+
+        // 縦だけの入力。レーンで受け止められるぶんを先に使い、余りは横へ流す。
+        let room = dy > 0 ? max(0, maxScrollY - scrollY) : max(0, scrollY)
+        let used = min(abs(dy), room) * (dy < 0 ? -1 : 1)
+        return (dx: dy - used, dy: used)
+    }
+}

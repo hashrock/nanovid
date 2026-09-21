@@ -784,19 +784,10 @@ struct TimelineView: View {
             return
         }
 
-        var dx = -rawX
-        var dy = -rawY
-        if flags.contains(.shift) {
-            // ⇧ で横パン固定。
-            dx = -(abs(rawX) > abs(rawY) ? rawX : rawY)
-            dy = 0
-        } else if abs(rawX) < 0.01 && maxScrollY <= 0 {
-            // 縦に動かす先が無いマウスホイールは横パンに回す。
-            dx = -rawY
-            dy = 0
-        }
-        let scale = precise ? 1.0 : 6.0
-        pan(dx: dx * scale, dy: dy * scale)
+        let d = TimelineWheel.route(deltaX: rawX, deltaY: rawY, precise: precise,
+                                    shift: flags.contains(.shift),
+                                    scrollY: offsetY, maxScrollY: maxScrollY)
+        pan(dx: d.dx, dy: d.dy)
     }
 
     private var magnifyGesture: some Gesture {

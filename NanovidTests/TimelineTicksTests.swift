@@ -342,3 +342,88 @@ struct TimelineSnapTests {
         #expect(abs(result - 2.4666666) < 1e-4)    // フレーム丸めのみ
     }
 }
+
+/// ホイール入力の振り分け。
+///
+/// 実測した値を使う。マウスのホイールを 1 ノッチ回すと行単位で
+/// `scrollingDeltaY = ±3`、トラックパッドは画素単位で ±40 前後になる。
+struct TimelineWheelTests {
+
+    /// レーンが数 pt しか余っていない状態。6 分の素材を入れた直後がこれ。
+    private let tightY = (scrollY: 0.0, maxScrollY: 12.0)
+
+    @Test("縦に動かしきれないぶんは横に回る")
+    func spillsIntoHorizontal() {
+        // 1 ノッチ = 3 行 = 120pt。縦は 12pt しか余っていない。
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
+                                    scrollY: tightY.scrollY, maxScrollY: tightY.maxScrollY)
+        #expect(d.dy == 12)
+        #expect(d.dx == 108)
+    }
+
+    @Test("縦を使い切ったあとのホイールは全部が横パンになる")
+    func panesHorizontallyOnceLanesAreAtTheEnd() {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
+                                    scrollY: 12, maxScrollY: 12)
+        #expect(d.dy == 0)
+        #expect(d.dx == 120)
+    }
+
+    @Test("レーンに余裕があるうちは素直に縦だけ動く")
+    func scrollsLanesWhenThereIsRoom() {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
+                                    scrollY: 0, maxScrollY: 400)
+        #expect(d.dy == 120)
+        #expect(d.dx == 0)
+    }
+
+    @Test("逆向きも同じように振り分ける")
+    func spillsIntoHorizontalWhenScrollingBack() {
+        // 上へ 1 ノッチ。すでに一番上なので縦には使えない。
+        let d = TimelineWheel.route(deltaX: 0, deltaY: 3, precise: false, shift: false,
+                                    scrollY: 0, maxScrollY: 12)
+        #expect(d.dy == 0)
+        #expect(d.dx == -120)
+    }
+
+    @Test("⇧ は縦の余りに関わらず横パン固定")
+    func shiftAlwaysPansHorizontally() {
+        // 行単位のイベントは macOS が先に軸を入れ替えて deltaX に載せてくる。
+        let swapped = TimelineWheel.route(deltaX: -3, deltaY: 0, precise: false, shift: true,
+                                          scrollY: 0, maxScrollY: 400)
+        #expect(swapped == (dx: 120, dy: 0))
+        // 入れ替わらずに来た場合も横に回す。
+        let raw = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: true,
+                                      scrollY: 0, maxScrollY: 400)
+        #expect(raw == (dx: 120, dy: 0))
+    }
+
+    @Test("トラックパッドの二本指は縦横そのまま")
+    func preciseDeltasPassThrough() {
+        let d = TimelineWheel.route(deltaX: -40, deltaY: -10, precise: true, shift: false,
+                                    scrollY: 0, maxScrollY: 400)
+        #expect(d == (dx: 40, dy: 10))
+    }
+
+    @Test("トラックパッドの縦スワイプも余りは横に回る")
+    func preciseVerticalSpills() {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -40, precise: true, shift: false,
+                                    scrollY: 0, maxScrollY: 12)
+        #expect(d == (dx: 28, dy: 12))
+    }
+
+    @Test("縦にも横にも動かせない入力は何も返さない")
+    func emptyInput() {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: 0, precise: false, shift: false,
+                                    scrollY: 0, maxScrollY: 0)
+        #expect(d == (dx: 0, dy: 0))
+    }
+
+    @Test("縦の余りが無いレーンでも 1 ノッチぶん横に動く", arguments: [-3.0, 3.0])
+    func neverDeadWhenLanesFit(delta: Double) {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: delta, precise: false, shift: false,
+                                    scrollY: 0, maxScrollY: 0)
+        #expect(abs(d.dx) == 120)
+        #expect(d.dy == 0)
+    }
+}
