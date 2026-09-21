@@ -56,8 +56,11 @@ struct PreviewPane: View {
             ZStack {
                 Color.black.opacity(0.35)
                 PlayerLayerView(player: store.player)
+                    // 尺の先では AVPlayer が末尾のフレームに張り付くので隠す。
+                    // 背景色だけが残り、書き出したときと同じ「何も無い」状態になる。
+                    .opacity(store.isPastEnd ? 0 : 1)
                     .frame(width: fitted.width, height: fitted.height)
-                    .background(Color.black)
+                    .background(Color(store.project.canvas.backgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .overlay(
                         RoundedRectangle(cornerRadius: 4)
@@ -67,6 +70,19 @@ struct PreviewPane: View {
                     Text("タイムラインに素材かテキストを追加してください")
                         .font(.callout)
                         .foregroundStyle(.secondary)
+                } else if store.isPastEnd {
+                    // 尺を超えた位置では AVPlayer が末尾のフレームに張り付くので、
+                    // そのままだと「まだ中身がある」ように見えてしまう。
+                    Text("ここから先は空です")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .frame(width: fitted.width, height: fitted.height,
+                               alignment: .bottom)
+                        .padding(.bottom, 10)
+                        .allowsHitTesting(false)
                 }
             }
             .frame(width: available.width, height: available.height)

@@ -37,9 +37,11 @@ struct TimelineView: View {
     }
 
     private var contentWidth: CGFloat {
-        // 末尾にも少し余白を持たせて、終端の先へ置けるようにする。
+        // 末尾にも余白を持たせて、終端の先へ置けるようにする。
+        // EditorStore.timelineEnd と同じ範囲になるようにそろえてある。
         CGFloat(TimelineScroll.contentX(forTime: max(store.duration, 10),
-                                        pixelsPerSecond: pps)) + 400
+                                        pixelsPerSecond: pps))
+            + CGFloat(EditorStore.trailingSlack)
     }
 
     private var lanesHeight: CGFloat {

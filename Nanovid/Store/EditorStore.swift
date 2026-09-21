@@ -40,7 +40,18 @@ final class EditorStore {
     @ObservationIgnored private var buildGeneration = 0
 
     var baseURL: URL? { documentURL?.deletingLastPathComponent() }
+
+    /// 置かれているクリップの末尾。書き出される尺でもある。
     var duration: Double { max(project.duration, 0) }
+
+    /// タイムラインの末尾に足す余白(pt)。ここまで再生ヘッドを動かせる。
+    /// 末尾より先にクリップを置きたいことがあるため。
+    static let trailingSlack: Double = 400
+
+    /// 再生ヘッドを動かせる上限。描画しているタイムラインの範囲と一致させてある。
+    var timelineEnd: Double {
+        max(duration, 10) + Self.trailingSlack / max(pixelsPerSecond, 1)
+    }
 
     // MARK: 初期化
 
@@ -70,6 +81,7 @@ final class EditorStore {
 
     func play() {
         guard duration > 0 else { return }
+        // 尺の先や末尾にいるときは頭から鳴らす。
         if currentTime >= duration - 1e-3 { seek(to: 0) }
         isPlaying = true
         player.play()
@@ -84,10 +96,16 @@ final class EditorStore {
     func togglePlay() { isPlaying ? pause() : play() }
 
     func seek(to time: Double) {
-        let clamped = max(0, min(duration, time))
+        // 再生ヘッドは尺の先へも出せる。プレビューは AVPlayer 側で末尾に張り付くので、
+        // 尺を超えた位置ではプレビューに「ここから先は空」と出す（PreviewPane）。
+        let clamped = max(0, min(timelineEnd, time))
         currentTime = clamped
-        player.seek(to: clamped.cmTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: min(clamped, duration).cmTime,
+                    toleranceBefore: .zero, toleranceAfter: .zero)
     }
+
+    /// 再生ヘッドが尺の先にあるか。
+    var isPastEnd: Bool { currentTime > duration + 1e-6 }
 
     func step(frames: Int) {
         pause()

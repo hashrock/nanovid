@@ -151,6 +151,67 @@ struct EditingTests {
         #expect(clip?.fade.outDuration == 0)
     }
 
+    @Test("再生ヘッドは尺の先へも出せる")
+    func playheadCanGoPastTheEnd() {
+        let (store, _, _) = makeStore()      // 4 秒のクリップが 1 本
+        #expect(abs(store.duration - 4) < 1e-9)
+
+        store.seek(to: 8)
+        #expect(abs(store.currentTime - 8) < 1e-9, "尺を超えた位置で止まれるべき")
+        #expect(store.isPastEnd)
+
+        store.seek(to: 2)
+        #expect(!store.isPastEnd)
+    }
+
+    @Test("再生ヘッドはタイムラインの描画範囲までで止まる")
+    func playheadStopsAtTimelineEnd() {
+        let (store, _, _) = makeStore()
+        // 末尾の余白は拡大率で決まる。描いていない先へは行かせない。
+        let expected = max(store.duration, 10) + EditorStore.trailingSlack / store.pixelsPerSecond
+        store.seek(to: 9999)
+        #expect(abs(store.currentTime - expected) < 1e-9)
+        #expect(abs(store.timelineEnd - expected) < 1e-9)
+    }
+
+    @Test("拡大すると末尾の余白は狭くなる")
+    func trailingSlackFollowsZoom() {
+        let (store, _, _) = makeStore()
+        store.pixelsPerSecond = 80
+        let wide = store.timelineEnd
+        store.pixelsPerSecond = 400
+        #expect(store.timelineEnd < wide)
+    }
+
+    @Test("再生ヘッドは 0 より手前へは出ない")
+    func playheadStopsAtZero() {
+        let (store, _, _) = makeStore()
+        store.seek(to: -5)
+        #expect(store.currentTime == 0)
+    }
+
+    @Test("尺の先からでも再生は頭から始まる")
+    func playFromPastEndRestarts() {
+        let (store, _, _) = makeStore()
+        store.seek(to: 8)
+        store.play()
+        #expect(store.currentTime == 0)
+        store.pause()
+    }
+
+    @Test("尺の先にクリップを置ける")
+    func canPlaceClipPastTheEnd() {
+        let (store, _, _) = makeStore()
+        let template = store.project.textTemplates[0]
+        let track = store.project.tracks.filter { $0.kind == .video }[1]
+        store.seek(to: 8)
+        store.addTextClip(templateID: template.id, trackID: track.id, at: store.currentTime)
+
+        let clip = store.project.tracks.first { $0.id == track.id }?.clips.first
+        #expect(abs((clip?.start ?? -1) - 8) < 1e-9)
+        #expect(store.duration > 8, "置いたぶん尺が伸びる")
+    }
+
     @Test("undo で 1 操作ぶん戻る")
     func undoRestoresPreviousState() {
         let (store, _, clipID) = makeStore()
