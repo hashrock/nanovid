@@ -48,6 +48,22 @@ Nanovid --transcribe <音声ファイル> [言語]     # 書き起こしだけ�
    --selftest /tmp/nanovid-selftest
 ```
 
+## アプリアイコン
+
+`Design/appicon.svg` が元データ。作り直すのは:
+
+```sh
+Scripts/make-appicon.sh
+```
+
+macOS 26 は新形式（Icon Composer の `.icon`）でないアイコンを、システムの台座に
+載せて表示する。そこで**背景は描かず、黒いグリフだけを透明地で渡して台座を背景に
+使っている**。自前で角丸の背景を描くと、台座の上にもう一枚四角が乗って二重枠に
+見えてしまう（実機で確認済み）。
+
+そのぶん macOS 15 で開くと台座が付かず、グリフだけが浮いて見える。ちゃんと
+両対応させるなら Icon Composer で `.icon` を作るのが正道。
+
 ## スクリプト
 
 `Scripts/` にある補助スクリプト。どちらも macOS の許可が要る。
@@ -55,6 +71,9 @@ Nanovid --transcribe <音声ファイル> [言語]     # 書き起こしだけ�
 ```sh
 # ビルドして起動する
 Scripts/run.sh [--demo|--release|--no-build] [プロジェクト]
+
+# アプリアイコンを Design/appicon.svg から作り直す
+Scripts/make-appicon.sh
 
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png
