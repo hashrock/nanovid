@@ -125,7 +125,7 @@ struct TextClipsPane: View {
             }
             .menuStyle(.borderlessButton)
             .fixedSize()
-            .disabled(store.duration <= 0)
+            .disabled(store.contentEnd <= 0)
             .help("タイムラインの音声を端末内で書き起こして字幕にする")
         }
     }

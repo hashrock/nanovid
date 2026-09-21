@@ -83,8 +83,17 @@ final class Exporter {
                 settings: ExportSettings,
                 progress: @escaping @Sendable (Double) -> Void) async throws {
 
-        let built = try await CompositionBuilder.build(project: project, baseURL: baseURL)
+        // 範囲の外のクリップを落としてから組む。範囲外は背景だけになるので、
+        // 合成の手間はほとんどかからない。
+        let built = try await CompositionBuilder.build(project: project.croppedToOutputRange(),
+                                                       baseURL: baseURL,
+                                                       constantFrameRate: true)
         let canvas = project.canvas
+        // 書き出すのはこの範囲だけ。合成は 0 秒から始めたままにして、
+        // 頭出しは AVAssetWriter のセッション開始時刻でそろえる。
+        let outputStart = min(project.outputStart, built.duration)
+        let outputEnd = max(min(project.outputEnd, built.duration),
+                            outputStart + canvas.frameDuration)
 
         if FileManager.default.fileExists(atPath: outputURL.path) {
             try FileManager.default.removeItem(at: outputURL)
@@ -169,15 +178,18 @@ final class Exporter {
         guard reader.startReading() else {
             throw ExportError.reader(reader.error?.localizedDescription ?? "不明なエラー")
         }
-        writer.startSession(atSourceTime: .zero)
+        // 範囲の先頭を出力の 0 秒に対応させる。AVAssetWriter がこの差を引いてくれる。
+        writer.startSession(atSourceTime: outputStart.cmTime)
 
-        let total = max(built.duration, 0.001)
-        async let videoDone: Void = pump(input: videoInput, output: videoOutput, label: "video") { pts in
-            progress(min(1, pts / total))
+        let total = max(outputEnd - outputStart, 0.001)
+        async let videoDone: Void = pump(input: videoInput, output: videoOutput,
+                                         label: "video", skipBefore: outputStart) { pts in
+            progress(min(1, max(0, pts - outputStart) / total))
         }
         async let audioDone: Void = {
             guard let audioInput, let audioOutput else { return }
-            try await pump(input: audioInput, output: audioOutput, label: "audio", onProgress: nil)
+            try await pump(input: audioInput, output: audioOutput, label: "audio",
+                           skipBefore: outputStart, onProgress: nil)
         }()
 
         _ = try await (videoDone, audioDone)
@@ -200,9 +212,12 @@ final class Exporter {
     }
 
     /// 1 系統ぶんのサンプルを読んで書く。
+    /// - Parameter skipBefore: この時刻より前のサンプルは捨てる。
+    ///   セッション開始より手前を渡さないことで、出力の頭をそろえる。
     private func pump(input: AVAssetWriterInput,
                       output: AVAssetReaderOutput,
                       label: String,
+                      skipBefore: Double,
                       onProgress: (@Sendable (Double) -> Void)?) async throws {
         let queue = DispatchQueue(label: "nanovid.export.\(label)")
         try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
@@ -220,6 +235,7 @@ final class Exporter {
                         return
                     }
                     let pts = CMSampleBufferGetPresentationTimeStamp(sample).secondsOrZero
+                    if pts < skipBefore - 1e-9 { continue }
                     if !input.append(sample) {
                         input.markAsFinished()
                         cont.resume(throwing: ExportError.writer(label))

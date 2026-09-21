@@ -54,7 +54,7 @@ struct TimelineView: View {
     private var contentWidth: CGFloat {
         // 末尾にも余白を持たせて、終端の先へ置けるようにする。
         // EditorStore.timelineEnd と同じ範囲になるようにそろえてある。
-        CGFloat(TimelineScroll.contentX(forTime: max(store.duration, 10),
+        CGFloat(TimelineScroll.contentX(forTime: max(max(store.contentEnd, store.outputEnd), 10),
                                         pixelsPerSecond: pps))
             + CGFloat(EditorStore.trailingSlack)
     }
@@ -277,6 +277,7 @@ struct TimelineView: View {
                     .clipped()
             }
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .overlay(alignment: .topLeading) { outsideOutputWash }
             .overlay(alignment: .topLeading) { extractOverlay }
             .overlay(alignment: .topLeading) { playhead }
             .overlay(alignment: .topLeading) { marqueeOverlay }
@@ -686,6 +687,32 @@ struct TimelineView: View {
             .allowsHitTesting(false)
     }
 
+    /// 書き出す範囲の外を伏せる。目盛りと同じ濃さにそろえてある。
+    /// クリックは奪わない（範囲外のクリップも触れる）。
+    @ViewBuilder
+    private var outsideOutputWash: some View {
+        let startX = TimelineScroll.viewportX(forTime: store.outputStart,
+                                              scrollX: offsetX, pixelsPerSecond: pps)
+        let endX = TimelineScroll.viewportX(forTime: store.outputEnd,
+                                            scrollX: offsetX, pixelsPerSecond: pps)
+        let wash = Color(nsColor: .windowBackgroundColor).opacity(0.55)
+        ZStack(alignment: .topLeading) {
+            if startX > 0 {
+                Rectangle().fill(wash)
+                    .frame(width: min(startX, Double(viewport.width)))
+                    .frame(maxHeight: .infinity)
+            }
+            if endX < Double(viewport.width) {
+                Rectangle().fill(wash)
+                    .frame(width: Double(viewport.width) - max(0, endX))
+                    .frame(maxHeight: .infinity)
+                    .offset(x: max(0, endX))
+            }
+        }
+        .padding(.top, Self.rulerHeight)
+        .allowsHitTesting(false)
+    }
+
     /// 切り抜きの範囲。開始を打ってから切り抜くまでのあいだ出しておく。
     @ViewBuilder
     private var extractOverlay: some View {
@@ -740,8 +767,9 @@ struct TimelineView: View {
     }
 
     private func zoomToFit() {
-        guard store.duration > 0, viewport.width > 0 else { return }
-        let target = (Double(viewport.width) - 40) / store.duration
+        let span = max(store.contentEnd, store.outputEnd)
+        guard span > 0, viewport.width > 0 else { return }
+        let target = (Double(viewport.width) - 40) / span
         store.pixelsPerSecond = min(Self.maxZoom, max(Self.minZoom, target))
         scrollX = 0
     }
@@ -933,50 +961,197 @@ private struct RulerView: View {
     @Bindable var store: EditorStore
     let scrollX: Double
 
+    /// マーカーのドラッグはここを基準に測る。マーカー自身のローカル座標で
+    /// 測ると、動かした結果が次の入力に混ざって振動する。
+    private static let spaceName = "nanovid.timeline.ruler"
+
+    /// 掴んだ点とマーカーのズレ。掴んだ瞬間に決めて、離すまで変えない。
+    @State private var grabOffset: Double?
+
     var body: some View {
-        let pps = store.pixelsPerSecond
-        let spec = TickSpec.forRuler(pixelsPerSecond: pps)
-        SwiftUI.Canvas { context, size in
-            let labelColor = Color.secondary
-            // 画面に映る範囲は内容座標で [scrollX, scrollX + 表示幅]。
-            let count = spec.minorCount(width: Double(size.width) + scrollX, pixelsPerSecond: pps)
-            for i in 0...max(0, count) {
-                let isMajor = spec.isMajor(index: i)
-                if !isMajor && !spec.showsMinor { continue }
-                let t = spec.time(index: i)
-                let x = CGFloat(TimelineScroll.viewportX(forTime: t, scrollX: scrollX,
-                                                        pixelsPerSecond: pps))
-                if x < -60 { continue }
-                if x > size.width { break }
-
-                var line = Path()
-                line.move(to: CGPoint(x: x, y: isMajor ? 4 : 13))
-                line.addLine(to: CGPoint(x: x, y: size.height))
-                context.stroke(line,
-                               with: .color(.secondary.opacity(isMajor ? 0.55 : 0.22)),
-                               lineWidth: 1)
-
-                if isMajor {
-                    let text = Text(Format.rulerLabel(t, step: spec.major))
-                        .font(.system(size: 9, design: .monospaced))
-                    var resolved = context.resolve(text)
-                    resolved.shading = .color(labelColor)
-                    context.draw(resolved, at: CGPoint(x: x + 3, y: 2), anchor: .topLeading)
+        GeometryReader { geo in
+            ZStack(alignment: .topLeading) {
+                SwiftUI.Canvas { context, size in
+                    drawOutsideOutput(&context, size: size)
+                    drawTicks(&context, size: size)
                 }
+                .contentShape(Rectangle())
+                .gesture(seekGesture)
+
+                marker(.start, height: Double(geo.size.height), width: Double(geo.size.width))
+                marker(.end, height: Double(geo.size.height), width: Double(geo.size.width))
+            }
+            .coordinateSpace(.named(Self.spaceName))
+        }
+        .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    private var pps: Double { store.pixelsPerSecond }
+
+    private func viewportX(_ time: Double) -> Double {
+        TimelineScroll.viewportX(forTime: time, scrollX: scrollX, pixelsPerSecond: pps)
+    }
+
+    // MARK: 描画
+
+    /// 書き出す範囲の外を伏せる。範囲を決めていなくても、クリップの終わりから
+    /// 先は「動画に入らないところ」なので同じ扱いにする。
+    private func drawOutsideOutput(_ context: inout GraphicsContext, size: CGSize) {
+        let wash = GraphicsContext.Shading.color(.secondary.opacity(0.22))
+        let startX = viewportX(store.outputStart)
+        let endX = viewportX(store.outputEnd)
+
+        if startX > 0 {
+            context.fill(Path(CGRect(x: 0, y: 0,
+                                     width: min(startX, Double(size.width)),
+                                     height: Double(size.height))),
+                         with: wash)
+        }
+        if endX < Double(size.width) {
+            let x = max(0, endX)
+            context.fill(Path(CGRect(x: x, y: 0,
+                                     width: Double(size.width) - x,
+                                     height: Double(size.height))),
+                         with: wash)
+        }
+    }
+
+    private func drawTicks(_ context: inout GraphicsContext, size: CGSize) {
+        let spec = TickSpec.forRuler(pixelsPerSecond: pps)
+        // 画面に映る範囲は内容座標で [scrollX, scrollX + 表示幅]。
+        let count = spec.minorCount(width: Double(size.width) + scrollX, pixelsPerSecond: pps)
+        for i in 0...max(0, count) {
+            let isMajor = spec.isMajor(index: i)
+            if !isMajor && !spec.showsMinor { continue }
+            let t = spec.time(index: i)
+            let x = CGFloat(viewportX(t))
+            if x < -60 { continue }
+            if x > size.width { break }
+
+            // 範囲外は目盛りも薄くする。背景の濃淡だけに頼らずに済む。
+            let fade = store.project.isInsideOutput(t) ? 1.0 : 0.45
+            var line = Path()
+            line.move(to: CGPoint(x: x, y: isMajor ? 4 : 13))
+            line.addLine(to: CGPoint(x: x, y: size.height))
+            context.stroke(line,
+                           with: .color(.secondary.opacity((isMajor ? 0.55 : 0.22) * fade)),
+                           lineWidth: 1)
+
+            if isMajor {
+                let text = Text(Format.rulerLabel(t, step: spec.major))
+                    .font(.system(size: 9, design: .monospaced))
+                var resolved = context.resolve(text)
+                resolved.shading = .color(.secondary.opacity(fade))
+                context.draw(resolved, at: CGPoint(x: x + 3, y: 2), anchor: .topLeading)
             }
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { value in
-                    store.pause()
-                    let t = TimelineScroll.time(atViewportX: Double(value.location.x),
-                                                scrollX: scrollX, pixelsPerSecond: pps)
-                    store.seek(to: store.project.canvas.snap(t))
+    }
+
+    // MARK: 範囲のマーカー
+
+    private enum Edge {
+        case start, end
+        var isStart: Bool { self == .start }
+    }
+
+    private func time(of edge: Edge) -> Double {
+        edge.isStart ? store.outputStart : store.outputEnd
+    }
+
+    private func marker(_ edge: Edge, height: Double, width: Double) -> some View {
+        let tab: Double = 9
+        let x = viewportX(time(of: edge))
+        // 画面の外に出たマーカーは消す。clipped() は描画を隠すだけで
+        // クリックは奪ったままなので、当たり判定ごと外しておく。
+        let visible = x >= -tab && x <= width + tab
+        // 旗は範囲の内側に出す。開始は右向き、終了は左向き。
+        return MarkerShape(pointingRight: edge.isStart)
+            .fill(Color.accentColor)
+            .frame(width: tab, height: height)
+            .contentShape(Rectangle().inset(by: -4))
+            .offset(x: edge.isStart ? x : x - tab)
+            .gesture(dragGesture(edge))
+            .help(edge.isStart ? "動画の開始位置" : "動画の終了位置")
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(visible)
+    }
+
+    private func dragGesture(_ edge: Edge) -> some Gesture {
+        DragGesture(minimumDistance: 0, coordinateSpace: .named(Self.spaceName))
+            .onChanged { value in
+                // 掴んだ点は startLocation で決める。value.location だと
+                // minimumDistance ぶんだけ掴み位置がずれて、最初に飛ぶ。
+                let grab: Double
+                if let existing = grabOffset {
+                    grab = existing
+                } else {
+                    let startTime = TimelineScroll.time(atViewportX: Double(value.startLocation.x),
+                                                        scrollX: scrollX, pixelsPerSecond: pps)
+                    grab = startTime - time(of: edge)
+                    grabOffset = grab
                 }
-        )
+                let pointer = TimelineScroll.time(atViewportX: Double(value.location.x),
+                                                  scrollX: scrollX, pixelsPerSecond: pps)
+                let target = TimelineSnap.resolve(pointerTime: pointer, grabOffset: grab,
+                                                  targets: snapTargets(for: edge),
+                                                  threshold: 8 / max(pps, 1),
+                                                  frameDuration: store.project.canvas.frameDuration)
+                if edge.isStart {
+                    store.setOutputStart(target, coalescing: "outputStart")
+                } else {
+                    store.setOutputEnd(target, coalescing: "outputEnd")
+                }
+            }
+            .onEnded { _ in grabOffset = nil }
+    }
+
+    /// 吸着先はクリップの端と、もう一方のマーカー。
+    private func snapTargets(for edge: Edge) -> [Double] {
+        var targets: [Double] = [0, store.contentEnd]
+        targets.append(edge.isStart ? store.outputEnd : store.outputStart)
+        for track in store.project.tracks {
+            for clip in track.clips {
+                targets.append(clip.start)
+                targets.append(clip.end)
+            }
+        }
+        return targets
+    }
+
+    // MARK: 再生ヘッドの移動
+
+    private var seekGesture: some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { value in
+                store.pause()
+                let t = TimelineScroll.time(atViewportX: Double(value.location.x),
+                                            scrollX: scrollX, pixelsPerSecond: pps)
+                store.seek(to: store.project.canvas.snap(t))
+            }
+    }
+}
+
+/// 範囲マーカーの旗。範囲の内側を向いた直角三角形と縦棒。
+private struct MarkerShape: Shape {
+    let pointingRight: Bool
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let w = rect.width
+        let head = min(rect.height * 0.55, w * 1.2)
+        if pointingRight {
+            p.addRect(CGRect(x: 0, y: 0, width: 2, height: rect.height))
+            p.move(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: w, y: 0))
+            p.addLine(to: CGPoint(x: 0, y: head))
+        } else {
+            p.addRect(CGRect(x: w - 2, y: 0, width: 2, height: rect.height))
+            p.move(to: CGPoint(x: w, y: 0))
+            p.addLine(to: CGPoint(x: 0, y: 0))
+            p.addLine(to: CGPoint(x: w, y: head))
+        }
+        p.closeSubpath()
+        return p
     }
 }
 

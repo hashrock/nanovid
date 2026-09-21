@@ -12,6 +12,46 @@ enum Format {
             : String(format: "%02d:%02d.%02d", m, s, frames)
     }
 
+    /// timecode の逆。"01:23.15" / "1:01:23.15" / "83.5" / "83" を秒へ。
+    /// ":" を含むときは最後の "." 以降をフレーム番号として扱い、
+    /// 含まないときは素直に小数秒として読む。
+    /// 数字と区切り以外が混ざっていたら nil を返す（入力途中の文字列を弾くため）。
+    static func parseTimecode(_ text: String, fps: Int) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isNumber || $0 == ":" || $0 == "." }) else {
+            return nil
+        }
+
+        // ":" が無ければただの秒数。"12.5" は 12.5 秒。
+        guard trimmed.contains(":") else {
+            return Double(trimmed).map { max(0, $0) }
+        }
+
+        let parts = trimmed.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count <= 3, let last = parts.last else { return nil }
+
+        // 手前の要素は時と分。
+        var total = 0.0
+        for part in parts.dropLast() {
+            guard let v = Int(part.isEmpty ? "0" : String(part)) else { return nil }
+            total = (total + Double(v)) * 60
+        }
+
+        // 末尾は "秒" か "秒.フレーム"。
+        let secondsAndFrames = last.split(separator: ".", omittingEmptySubsequences: false)
+        guard secondsAndFrames.count <= 2,
+              let seconds = Int(secondsAndFrames[0].isEmpty ? "0" : String(secondsAndFrames[0]))
+        else { return nil }
+        total += Double(seconds)
+
+        if secondsAndFrames.count == 2 {
+            guard let frames = Int(secondsAndFrames[1].isEmpty ? "0" : String(secondsAndFrames[1]))
+            else { return nil }
+            total += Double(frames) / Double(max(1, fps))
+        }
+        return max(0, total)
+    }
+
     /// 目盛り用の短い表記。step が 1 秒未満のときは小数を出す。
     /// 秒に丸めてしまうと、刻みが細かいときにラベルが重複してしまうため。
     static func rulerLabel(_ seconds: Double, step: Double) -> String {

@@ -158,17 +158,17 @@ struct EditingTests {
 
         store.seek(to: 8)
         #expect(abs(store.currentTime - 8) < 1e-9, "尺を超えた位置で止まれるべき")
-        #expect(store.isPastEnd)
+        #expect(store.isOutsideOutput)
 
         store.seek(to: 2)
-        #expect(!store.isPastEnd)
+        #expect(!store.isOutsideOutput)
     }
 
     @Test("再生ヘッドはタイムラインの描画範囲までで止まる")
     func playheadStopsAtTimelineEnd() {
         let (store, _, _) = makeStore()
         // 末尾の余白は拡大率で決まる。描いていない先へは行かせない。
-        let expected = max(store.duration, 10) + EditorStore.trailingSlack / store.pixelsPerSecond
+        let expected = max(store.contentEnd, 10) + EditorStore.trailingSlack / store.pixelsPerSecond
         store.seek(to: 9999)
         #expect(abs(store.currentTime - expected) < 1e-9)
         #expect(abs(store.timelineEnd - expected) < 1e-9)

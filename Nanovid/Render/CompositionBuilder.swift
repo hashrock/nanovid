@@ -46,7 +46,9 @@ private struct PendingLayer {
 /// 元ファイルを参照するだけで、中間ファイルは一切作らない。
 enum CompositionBuilder {
 
-    static func build(project: Project, baseURL: URL?) async throws -> BuiltComposition {
+    /// - Parameter constantFrameRate: 静止した区間でも毎フレーム描く。書き出し用。
+    static func build(project: Project, baseURL: URL?,
+                      constantFrameRate: Bool = false) async throws -> BuiltComposition {
         let canvas = project.canvas
         let canvasSize = canvas.size
         let composition = AVMutableComposition()
@@ -128,7 +130,10 @@ enum CompositionBuilder {
             }
         }
 
-        let timelineDuration = max(project.duration, composition.duration.secondsOrZero)
+        // 合成はタイムライン全体を持つ。書き出す範囲で切るのは Exporter の仕事。
+        // 範囲をクリップの先まで伸ばしてあるときは、そこまで背景を敷く。
+        let timelineDuration = max(max(project.contentEnd, project.outputEnd),
+                                   composition.duration.secondsOrZero)
         guard timelineDuration > 0 else { throw BuildError.emptyProject }
 
         // 素材を入れ終わった時点での終端。Double へ落とすと端が丸められることがあるので、
@@ -170,7 +175,8 @@ enum CompositionBuilder {
                 }
             instructions.append(NanovidInstruction(
                 timeRange: range, layers: active,
-                backgroundColor: canvas.backgroundColor, canvasSize: canvasSize))
+                backgroundColor: canvas.backgroundColor, canvasSize: canvasSize,
+                alwaysRenders: constantFrameRate))
         }
 
         let videoComposition = AVMutableVideoComposition()

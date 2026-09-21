@@ -140,6 +140,31 @@ struct RulerLabelTests {
         #expect(Format.timecode(61.0, fps: 30) == "01:01.00")
         #expect(Format.timecode(3661.0, fps: 30) == "1:01:01.00")
     }
+
+    @Test("タイムコードを読み戻せる")
+    func parsesTimecode() {
+        #expect(Format.parseTimecode("00:00.00", fps: 30) == 0)
+        #expect(Format.parseTimecode("01:01.00", fps: 30) == 61)
+        #expect(Format.parseTimecode("1:01:01.00", fps: 30) == 3661)
+        #expect(abs(Format.parseTimecode("00:01.15", fps: 30)! - 1.5) < 1e-9)
+        // 区切りが無ければただの秒数。
+        #expect(Format.parseTimecode("83", fps: 30) == 83)
+        #expect(Format.parseTimecode("12.5", fps: 30) == 12.5)
+    }
+
+    @Test("表示したタイムコードは同じ値に戻る",
+          arguments: [0.0, 1.5, 61.0, 3661.0, 123.4666666])
+    func timecodeRoundTrips(seconds: Double) {
+        let text = Format.timecode(seconds, fps: 30)
+        let parsed = Format.parseTimecode(text, fps: 30)
+        // 表示はフレーム単位に丸まるので、1 フレームぶんまでの差は許す。
+        #expect(abs(parsed! - seconds) < 1.0 / 30)
+    }
+
+    @Test("読めない入力は nil", arguments: ["", "  ", "abc", "1:2:3:4", "1:2.3.4", "12s", "-5"])
+    func rejectsGarbage(text: String) {
+        #expect(Format.parseTimecode(text, fps: 30) == nil)
+    }
 }
 
 /// ズームとスクロール位置の関係。

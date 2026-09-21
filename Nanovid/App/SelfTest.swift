@@ -127,7 +127,11 @@ enum SelfTest {
                 let project = try ProjectIO.load(from: url)
                 let base = url.deletingLastPathComponent()
                 print("プロジェクト: \(project.name)  \(project.canvas.width)x\(project.canvas.height) / \(project.canvas.fps)fps")
-                print("尺: \(String(format: "%.2f", project.duration)) 秒")
+                print("尺: \(String(format: "%.2f", project.duration)) 秒"
+                      + (project.hasExplicitOutputRange
+                         ? String(format: "（範囲 %.2f〜%.2f / 中身は %.2f 秒まで）",
+                                  project.outputStart, project.outputEnd, project.contentEnd)
+                         : "（クリップに追従）"))
 
                 for asset in project.assets {
                     let resolved = asset.url(relativeTo: base)
@@ -303,7 +307,48 @@ enum SelfTest {
                                     settings: ExportSettings()) { _ in }
         try report(gapped, expectDuration: 3.0, expectSize: p3.canvas.size)
 
-        // --- 4) 保存と読み込みの往復 ---
+        // --- 4) 書き出す範囲 ---
+        //
+        // 1 秒ごとに見た目がはっきり違うタイムラインを作り、その 2.0〜3.0 秒だけを
+        // 書き出す。範囲の先頭が出力の 0 秒に来ているかを、全体版のどの時刻と
+        // いちばん近いかで確かめる。
+        var p4 = Project.starter()
+        p4.canvas = CanvasSpec(width: 640, height: 360, fps: 30)
+        p4.canvas.backgroundColor = RGBAColor(hex: "#202020")!
+        let bigTitle = try template("タイトル", in: p4)
+        p4.tracks[1].clips = (0..<3).map { i in
+            Clip(start: Double(i), duration: 1.0, content: .text(TextInstance(
+                templateID: bigTitle.id,
+                props: ["title": .string(["AAAA", "MMMM", "||||"][i]),
+                        "subtitle": .string("\(i) 秒台")]
+            )))
+        }
+
+        let whole = dir.appendingPathComponent("04-range-whole.mp4")
+        try await Exporter().export(project: p4, baseURL: nil, to: whole,
+                                    settings: ExportSettings()) { _ in }
+        try report(whole, expectDuration: 3.0, expectSize: p4.canvas.size)
+
+        var p4r = p4
+        p4r.outputRange = OutputRange(start: 2.0, end: 3.0)
+        let ranged = dir.appendingPathComponent("04-range-cut.mp4")
+        try await Exporter().export(project: p4r, baseURL: nil, to: ranged,
+                                    settings: ExportSettings()) { _ in }
+        try report(ranged, expectDuration: 1.0, expectSize: p4.canvas.size)
+
+        // 再エンコードを挟むので画素は完全には一致しない。絶対値ではなく、
+        // 全体版のどの時刻といちばん近いかで判定する。
+        let cutFrame = try await frame(of: ranged, at: 0.5)
+        var scores: [(time: Double, diff: Double)] = []
+        for t in [0.5, 1.5, 2.5] {
+            scores.append((t, meanDifference(cutFrame, try await frame(of: whole, at: t))))
+        }
+        let detail = scores.map { String(format: "%.1fs=%.2f", $0.time, $0.diff) }.joined(separator: " ")
+        let best = scores.min { $0.diff < $1.diff }!
+        guard best.time == 2.5 else { throw Fail("範囲の先頭がずれています（\(detail)）") }
+        print("  範囲書き出し ok (2.0〜3.0 秒、全体版との差 \(detail))")
+
+        // --- 5) 保存と読み込みの往復 ---
         let projectFile = dir.appendingPathComponent("roundtrip.nanovid")
         try ProjectIO.save(p3, to: projectFile)
         let reloaded = try ProjectIO.load(from: projectFile)
@@ -316,15 +361,47 @@ enum SelfTest {
         let localCopy = dir.appendingPathComponent("local.mp4")
         try? FileManager.default.removeItem(at: localCopy)
         try FileManager.default.copyItem(at: textOnly, to: localCopy)
-        var p4 = p3
-        p4.assets = [MediaAsset(path: localCopy.path, displayName: "local", kind: .video,
+        var p5 = p3
+        p5.assets = [MediaAsset(path: localCopy.path, displayName: "local", kind: .video,
                                 duration: 3, naturalSize: nil, hasAudio: false, hasVideo: true)]
-        try ProjectIO.save(p4, to: projectFile)
+        try ProjectIO.save(p5, to: projectFile)
         let reloaded4 = try ProjectIO.load(from: projectFile)
         guard reloaded4.assets.first?.path == "local.mp4" else {
             throw Fail("相対パスになっていません: \(reloaded4.assets.first?.path ?? "nil")")
         }
         print("  roundtrip ok (相対パス: \(reloaded4.assets.first!.path))")
+    }
+
+    /// 動画の指定時刻のフレームを取り出す。
+    private static func frame(of url: URL, at seconds: Double) async throws -> CGImage {
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: seconds.cmTime).image
+    }
+
+    /// 2 枚の画像の画素成分の平均差。再エンコードのぶん完全一致はしないので、
+    /// 「どのフレームにいちばん近いか」を測るために使う。
+    private static func meanDifference(_ a: CGImage, _ b: CGImage) -> Double {
+        guard a.width == b.width, a.height == b.height else { return 255 }
+        func pixels(_ image: CGImage) -> [UInt8] {
+            var buffer = [UInt8](repeating: 0, count: image.width * image.height * 4)
+            buffer.withUnsafeMutableBytes { raw in
+                let ctx = CGContext(data: raw.baseAddress, width: image.width, height: image.height,
+                                    bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                                    space: CGColorSpaceCreateDeviceRGB(),
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+                ctx?.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+            }
+            return buffer
+        }
+        let pa = pixels(a), pb = pixels(b)
+        let count = min(pa.count, pb.count)
+        guard count > 0 else { return 255 }
+        var total = 0
+        for i in 0..<count { total += abs(Int(pa[i]) - Int(pb[i])) }
+        return Double(total) / Double(count)
     }
 
     private static func report(_ url: URL, expectDuration: Double, expectSize: CGSize) throws {

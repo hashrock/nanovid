@@ -63,9 +63,9 @@ struct PreviewPane: View {
             ZStack {
                 Color.black.opacity(0.35)
                 PlayerLayerView(player: store.player)
-                    // 尺の先では AVPlayer が末尾のフレームに張り付くので隠す。
+                    // 書き出す範囲の外では AVPlayer が端のフレームに張り付くので隠す。
                     // 背景色だけが残り、書き出したときと同じ「何も無い」状態になる。
-                    .opacity(store.isPastEnd ? 0 : 1)
+                    .opacity(store.isOutsideOutput ? 0 : 1)
                     .frame(width: fitted.width, height: fitted.height)
                     .background(Color(store.project.canvas.backgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 4))
@@ -79,14 +79,14 @@ struct PreviewPane: View {
                         .coordinateSpace(.named(Self.spaceName))
                 }
 
-                if store.project.duration <= 0 {
+                if store.project.contentEnd <= 0 {
                     Text("タイムラインに素材かテキストを追加してください")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                } else if store.isPastEnd {
-                    // 尺を超えた位置では AVPlayer が末尾のフレームに張り付くので、
+                } else if store.isOutsideOutput {
+                    // 範囲の外では AVPlayer が端のフレームに張り付くので、
                     // そのままだと「まだ中身がある」ように見えてしまう。
-                    Text("ここから先は空です")
+                    Text("書き出す範囲の外です")
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.9))
                         .padding(.horizontal, 10)

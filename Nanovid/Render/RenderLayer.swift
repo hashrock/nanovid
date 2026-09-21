@@ -42,12 +42,18 @@ final class NanovidInstruction: NSObject, AVVideoCompositionInstructionProtocol 
     let backgroundColor: RGBAColor
     let canvasSize: CGSize
 
-    init(timeRange: CMTimeRange, layers: [RenderLayer], backgroundColor: RGBAColor, canvasSize: CGSize) {
+    /// - Parameter alwaysRenders: 中身が動かない区間でも毎フレーム描かせる。
+    ///   false だと AVFoundation は区間あたり 1 枚しか要求しない。再生はそれで
+    ///   よいが、書き出すとフレーム数が中身次第になってしまう（静止した 1 秒が
+    ///   1 枚になり、尺まで狂う）ので、書き出し時は true にする。
+    init(timeRange: CMTimeRange, layers: [RenderLayer], backgroundColor: RGBAColor,
+         canvasSize: CGSize, alwaysRenders: Bool = false) {
         self.timeRange = timeRange
         self.layers = layers
         self.backgroundColor = backgroundColor
         self.canvasSize = canvasSize
-        self.containsTweening = layers.contains { $0.fade.inDuration > 0 || $0.fade.outDuration > 0 }
+        self.containsTweening = alwaysRenders
+            || layers.contains { $0.fade.inDuration > 0 || $0.fade.outDuration > 0 }
         let ids = layers.compactMap(\.trackID).map { NSNumber(value: $0) as NSValue }
         self.requiredSourceTrackIDs = ids.isEmpty ? nil : ids
         super.init()

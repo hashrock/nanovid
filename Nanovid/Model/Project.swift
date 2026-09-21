@@ -122,6 +122,12 @@ struct Track: Identifiable, Codable, Hashable {
 
 // MARK: - プロジェクト
 
+/// 書き出す範囲。開始と終了はそれぞれ独立に動かす。
+struct OutputRange: Codable, Hashable {
+    var start: Double
+    var end: Double
+}
+
 struct Project: Codable, Hashable {
     var formatVersion: Int = 1
     var name: String = "無題"
@@ -130,8 +136,28 @@ struct Project: Codable, Hashable {
     /// 配列の先頭が最背面。UI では上下反転して表示する。
     var tracks: [Track] = []
     var textTemplates: [TextTemplate] = []
+    /// 書き出す範囲。nil のあいだはクリップの終端に追従する。
+    /// 一度でも端を動かすと確定し、以後クリップを足しても勝手に伸びない。
+    var outputRange: OutputRange?
 
-    var duration: Double { tracks.map(\.duration).max() ?? 0 }
+    /// クリップが置かれている末尾。範囲とは別で、タイムラインの中身そのもの。
+    var contentEnd: Double { tracks.map(\.duration).max() ?? 0 }
+
+    /// 書き出す範囲の開始。
+    var outputStart: Double { max(0, outputRange?.start ?? 0) }
+
+    /// 書き出す範囲の終了。開始より前には来ない。
+    var outputEnd: Double { max(outputStart, outputRange?.end ?? contentEnd) }
+
+    /// 書き出される動画の尺。
+    var duration: Double { max(0, outputEnd - outputStart) }
+
+    /// 範囲を自分で決めているか。false ならクリップに追従している。
+    var hasExplicitOutputRange: Bool { outputRange != nil }
+
+    func isInsideOutput(_ time: Double) -> Bool {
+        time >= outputStart - 1e-9 && time <= outputEnd + 1e-9
+    }
 
     func asset(_ id: UUID) -> MediaAsset? { assets.first { $0.id == id } }
     func template(_ id: UUID) -> TextTemplate? { textTemplates.first { $0.id == id } }
@@ -173,5 +199,45 @@ struct Project: Codable, Hashable {
         ]
         p.textTemplates = [.subtitle(), .plainSubtitle(), .lowerLeftNote(), .title()]
         return p
+    }
+}
+
+// MARK: - 書き出す範囲の切り出し
+
+extension Project {
+
+    /// 書き出す範囲の外を落としたプロジェクトを返す。時刻はそのまま。
+    ///
+    /// 範囲の先頭を 0 秒に寄せたほうが素直だが、そうすると
+    /// AVAssetReader が -11841（不正な映像合成）で読み始めに失敗する。
+    /// 先頭は 0 のまま、範囲外を空にして合成の手間だけ省く。
+    /// 出力の頭出しは AVAssetWriter のセッション開始時刻でそろえる。
+    func croppedToOutputRange() -> Project {
+        let from = outputStart
+        let to = outputEnd
+        var copy = self
+        copy.tracks = tracks.map { track in
+            var cropped = track
+            cropped.clips = track.clips.compactMap { clip in
+                let head = max(clip.start, from)
+                let tail = min(clip.end, to)
+                guard tail - head > 1e-9 else { return nil }
+
+                var cut = clip
+                let headCut = head - clip.start
+                let tailCut = clip.end - tail
+                cut.start = head
+                cut.duration = tail - head
+                if case .media(let assetID, let sourceStart) = clip.content {
+                    cut.content = .media(assetID: assetID, sourceStart: sourceStart + headCut)
+                }
+                // フェードはクリップの端からの長さ。切り落とした端のぶんだけ縮める。
+                cut.fade = Fade(inDuration: max(0, clip.fade.inDuration - headCut),
+                                outDuration: max(0, clip.fade.outDuration - tailCut))
+                return cut
+            }
+            return cropped
+        }
+        return copy
     }
 }

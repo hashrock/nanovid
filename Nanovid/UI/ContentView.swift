@@ -119,7 +119,7 @@ struct ContentView: View {
                     .font(.title3)
             }
             Button { store.step(frames: 1) } label: { Image(systemName: "forward.frame.fill") }
-            Button { store.seek(to: store.duration) } label: { Image(systemName: "forward.end.fill") }
+            Button { store.seek(to: store.outputEnd) } label: { Image(systemName: "forward.end.fill") }
 
             Divider().frame(height: 16)
 

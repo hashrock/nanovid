@@ -54,8 +54,15 @@ final class EditorStore {
 
     var baseURL: URL? { documentURL?.deletingLastPathComponent() }
 
-    /// 置かれているクリップの末尾。書き出される尺でもある。
-    var duration: Double { max(project.duration, 0) }
+    /// 書き出される動画の尺。範囲を決めていなければクリップの終端まで。
+    var duration: Double { project.duration }
+
+    /// クリップが置かれている末尾。
+    var contentEnd: Double { project.contentEnd }
+
+    /// 書き出す範囲。
+    var outputStart: Double { project.outputStart }
+    var outputEnd: Double { project.outputEnd }
 
     /// タイムラインの末尾に足す余白(pt)。ここまで再生ヘッドを動かせる。
     /// 末尾より先にクリップを置きたいことがあるため。
@@ -63,7 +70,7 @@ final class EditorStore {
 
     /// 再生ヘッドを動かせる上限。描画しているタイムラインの範囲と一致させてある。
     var timelineEnd: Double {
-        max(duration, 10) + Self.trailingSlack / max(pixelsPerSecond, 1)
+        max(max(contentEnd, outputEnd), 10) + Self.trailingSlack / max(pixelsPerSecond, 1)
     }
 
     // MARK: 初期化
@@ -84,7 +91,7 @@ final class EditorStore {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] t in
             guard let self, self.isPlaying else { return }
             self.currentTime = t.secondsOrZero
-            if self.currentTime >= self.duration - 1e-3 {
+            if self.currentTime >= self.outputEnd - 1e-3 {
                 self.pause()
             }
         }
@@ -94,8 +101,10 @@ final class EditorStore {
 
     func play() {
         guard duration > 0 else { return }
-        // 尺の先や末尾にいるときは頭から鳴らす。
-        if currentTime >= duration - 1e-3 { seek(to: 0) }
+        // 範囲の外や末尾にいるときは範囲の頭から鳴らす。
+        if currentTime < outputStart - 1e-9 || currentTime >= outputEnd - 1e-3 {
+            seek(to: outputStart)
+        }
         isPlaying = true
         player.play()
     }
@@ -113,12 +122,12 @@ final class EditorStore {
         // 尺を超えた位置ではプレビューに「ここから先は空」と出す（PreviewPane）。
         let clamped = max(0, min(timelineEnd, time))
         currentTime = clamped
-        player.seek(to: min(clamped, duration).cmTime,
+        player.seek(to: min(clamped, max(contentEnd, outputEnd)).cmTime,
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
-    /// 再生ヘッドが尺の先にあるか。
-    var isPastEnd: Bool { currentTime > duration + 1e-6 }
+    /// 再生ヘッドが書き出す範囲の外にあるか。
+    var isOutsideOutput: Bool { !project.isInsideOutput(currentTime) }
 
     func step(frames: Int) {
         pause()

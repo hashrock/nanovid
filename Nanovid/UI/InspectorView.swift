@@ -71,8 +71,43 @@ struct InspectorView: View {
                 .foregroundStyle(.secondary)
 
             Divider()
+            outputRangeBlock
+
+            Divider()
             Text("クリップを選択すると、ここで詳細を編集できます。")
                 .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 書き出す範囲。タイムラインのマーカーと同じ値を数字で触れるようにする。
+    private var outputRangeBlock: some View {
+        let fps = store.project.canvas.fps
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text("動画の範囲").font(.caption).foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+                if store.project.hasExplicitOutputRange {
+                    Button("自動に戻す") { store.resetOutputRange() }
+                        .buttonStyle(.link)
+                        .font(.caption2)
+                }
+            }
+
+            TimecodeRow(label: "開始", seconds: store.outputStart, fps: fps) {
+                store.setOutputStart($0)
+            }
+            TimecodeRow(label: "長さ", seconds: store.duration, fps: fps) {
+                store.setOutputDuration($0)
+            }
+            TimecodeRow(label: "終了", seconds: store.outputEnd, fps: fps) {
+                store.setOutputEnd($0)
+            }
+
+            Text(store.project.hasExplicitOutputRange
+                 ? "この範囲だけを書き出します。"
+                 : "クリップの終わりに合わせています。")
+                .font(.caption2)
                 .foregroundStyle(.secondary)
         }
     }
@@ -382,5 +417,47 @@ struct CanvasPresetOption: Identifiable {
 
     static let all: [CanvasPresetOption] = CanvasPreset.all.map {
         CanvasPresetOption(name: $0.name, size: $0.size)
+    }
+}
+
+/// タイムコードで時刻を入れる行。
+///
+/// 確定するまで外の値で上書きしない。打っている途中に
+/// 正規化された文字列が降ってくると、カーソルが飛んで打てなくなる。
+struct TimecodeRow: View {
+    let label: String
+    let seconds: Double
+    let fps: Int
+    let onCommit: (Double) -> Void
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(label)
+                .font(.caption)
+                .frame(width: 66, alignment: .leading)
+            TextField("", text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(.system(.caption, design: .monospaced))
+                .frame(width: 90)
+                .focused($focused)
+                // 確定はフォーカスが外れたときの一本道にする。
+                .onSubmit { focused = false }
+            Spacer(minLength: 0)
+        }
+        .onChange(of: seconds) { _, new in if !focused { text = Format.timecode(new, fps: fps) } }
+        .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+        .onAppear { text = Format.timecode(seconds, fps: fps) }
+    }
+
+    private func commit() {
+        if let parsed = Format.parseTimecode(text, fps: fps) {
+            onCommit(parsed)
+        }
+        // 読めなかった入力は捨てて表示を戻す。受理された場合も、
+        // 丸めたあとの値が onChange(of: seconds) で入ってくる。
+        text = Format.timecode(seconds, fps: fps)
     }
 }

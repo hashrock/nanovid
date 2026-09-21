@@ -539,3 +539,43 @@ extension EditorStore {
         TextRasterizer.shared.invalidateAll()
     }
 }
+
+// MARK: - 書き出す範囲
+
+extension EditorStore {
+
+    /// 範囲の最小の長さ。1 フレームは残す。
+    private var minimumOutputDuration: Double { project.canvas.frameDuration }
+
+    /// 開始位置を動かす。終了位置は据え置きなので、そのぶん尺が変わる。
+    /// - Parameter coalescing: ドラッグ中は同じ key を渡して 1 つの undo にまとめる。
+    func setOutputStart(_ time: Double, coalescing key: String? = nil) {
+        let end = project.outputEnd
+        let start = project.canvas.snap(min(max(0, time), end - minimumOutputDuration))
+        applyOutputRange(start: start, end: end, coalescing: key)
+    }
+
+    /// 終了位置を動かす。開始位置は据え置き。
+    func setOutputEnd(_ time: Double, coalescing key: String? = nil) {
+        let start = project.outputStart
+        let end = project.canvas.snap(max(time, start + minimumOutputDuration))
+        applyOutputRange(start: start, end: end, coalescing: key)
+    }
+
+    /// 尺を決める。開始位置を軸に終了位置が動く。
+    func setOutputDuration(_ seconds: Double, coalescing key: String? = nil) {
+        setOutputEnd(project.outputStart + seconds, coalescing: key)
+    }
+
+    /// 範囲をクリップ追従に戻す。
+    func resetOutputRange() {
+        guard project.outputRange != nil else { return }
+        edit { $0.outputRange = nil }
+    }
+
+    private func applyOutputRange(start: Double, end: Double, coalescing key: String?) {
+        let next = OutputRange(start: start, end: max(start + minimumOutputDuration, end))
+        guard next != project.outputRange else { return }
+        edit(coalescing: key) { $0.outputRange = next }
+    }
+}
