@@ -45,8 +45,15 @@ struct PlayerLayerView: NSViewRepresentable {
 }
 
 /// キャンバス比を保った枠にプレビューを収める。
+/// 選んでいる映像・画像には枠とハンドルを出して、その場で動かせるようにする。
 struct PreviewPane: View {
     @Bindable var store: EditorStore
+
+    /// ハンドルのドラッグを測る座標空間。ハンドル自身は動くので、
+    /// ジェスチャ既定のローカル空間で測ると位置が振動する。
+    private static let spaceName = "nanovid.preview.canvas"
+
+    @State private var drag: HandleDrag?
 
     var body: some View {
         GeometryReader { geo in
@@ -66,6 +73,12 @@ struct PreviewPane: View {
                         RoundedRectangle(cornerRadius: 4)
                             .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
                     )
+                if let target = editTarget {
+                    handles(for: target, box: fitted)
+                        .frame(width: fitted.width, height: fitted.height)
+                        .coordinateSpace(.named(Self.spaceName))
+                }
+
                 if store.project.duration <= 0 {
                     Text("タイムラインに素材かテキストを追加してください")
                         .font(.callout)
@@ -87,6 +100,137 @@ struct PreviewPane: View {
             }
             .frame(width: available.width, height: available.height)
         }
+    }
+
+    // MARK: - 直接操作
+
+    /// いま枠を出す対象。1 つだけ選んでいて、その時刻に映っている映像か画像。
+    private struct EditTarget {
+        var clip: Clip
+        var naturalSize: CGSize
+    }
+
+    private var editTarget: EditTarget? {
+        guard store.selectedClipIDs.count == 1,
+              let id = store.selectedClipIDs.first,
+              let clip = store.project.clip(id),
+              clip.contains(store.currentTime),
+              let assetID = clip.content.assetID,
+              let asset = store.project.asset(assetID),
+              asset.kind != .audio,
+              let size = asset.naturalSize,
+              size.width > 0, size.height > 0
+        else { return nil }
+        return EditTarget(clip: clip, naturalSize: size)
+    }
+
+    struct HandleDrag {
+        enum Kind: Equatable {
+            case move
+            case corner(MediaLayout.Corner)
+        }
+        var clipID: UUID
+        var kind: Kind
+        var startTransform: Transform2D
+        /// 掴んだ瞬間のキャンバス座標での矩形。以降はこれを基準に計算する。
+        var startRect: CGRect
+    }
+
+    @ViewBuilder
+    private func handles(for target: EditTarget, box: CGSize) -> some View {
+        let canvas = store.project.canvas.size
+        let scale = box.width / canvas.width
+        let rect = MediaLayout.rect(naturalSize: target.naturalSize,
+                                    transform: target.clip.transform, canvas: canvas)
+        let frame = CGRect(x: rect.minX * scale, y: rect.minY * scale,
+                           width: rect.width * scale, height: rect.height * scale)
+
+        ZStack(alignment: .topLeading) {
+            Rectangle()
+                .strokeBorder(Color.accentColor, lineWidth: 1.5)
+                .contentShape(Rectangle())
+                .frame(width: max(1, frame.width), height: max(1, frame.height))
+                .offset(x: frame.minX, y: frame.minY)
+                .onHover { inside in
+                    if inside { NSCursor.openHand.set() } else { NSCursor.arrow.set() }
+                }
+                .gesture(moveGesture(target: target, scale: scale))
+
+            ForEach(MediaLayout.Corner.allCases, id: \.self) { corner in
+                handle(corner, in: frame, target: target, scale: scale)
+            }
+        }
+        .frame(width: box.width, height: box.height, alignment: .topLeading)
+    }
+
+    private func handle(_ corner: MediaLayout.Corner, in frame: CGRect,
+                        target: EditTarget, scale: Double) -> some View {
+        let point = corner.point(in: frame)
+        return RoundedRectangle(cornerRadius: 2)
+            .fill(Color.white)
+            .overlay(RoundedRectangle(cornerRadius: 2)
+                .strokeBorder(Color.accentColor, lineWidth: 1.5))
+            .frame(width: 11, height: 11)
+            .offset(x: point.x - 5.5, y: point.y - 5.5)
+            .onHover { inside in
+                if inside { NSCursor.crosshair.set() } else { NSCursor.arrow.set() }
+            }
+            .gesture(resizeGesture(corner: corner, target: target, scale: scale))
+    }
+
+    private func moveGesture(target: EditTarget, scale: Double) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.spaceName))
+            .onChanged { value in
+                let canvas = store.project.canvas.size
+                let started = begin(target, kind: .move, scale: scale)
+                let dx = Double(value.location.x - value.startLocation.x) / scale
+                let dy = Double(value.location.y - value.startLocation.y) / scale
+                var transform = started.startTransform
+                transform.position = CGPoint(
+                    x: started.startTransform.position.x + dx / canvas.width,
+                    y: started.startTransform.position.y + dy / canvas.height)
+                apply(transform, to: target.clip.id)
+            }
+            .onEnded { _ in drag = nil }
+    }
+
+    private func resizeGesture(corner: MediaLayout.Corner,
+                               target: EditTarget, scale: Double) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(Self.spaceName))
+            .onChanged { value in
+                let canvas = store.project.canvas.size
+                let started = begin(target, kind: .corner(corner), scale: scale)
+                // 画面上の位置をキャンバス座標へ直してから計算する。
+                let point = CGPoint(x: Double(value.location.x) / scale,
+                                    y: Double(value.location.y) / scale)
+                let resized = MediaLayout.resized(started.startRect, corner: corner, to: point,
+                                                  naturalSize: target.naturalSize, canvas: canvas)
+                apply(MediaLayout.transform(for: resized,
+                                            naturalSize: target.naturalSize,
+                                            canvas: canvas,
+                                            rotation: started.startTransform.rotation),
+                      to: target.clip.id)
+            }
+            .onEnded { _ in drag = nil }
+    }
+
+    /// 掴んだ瞬間の状態を覚える。以降はここを基準にするので、
+    /// 枠が動いても結果が変わらない。
+    private func begin(_ target: EditTarget, kind: HandleDrag.Kind, scale: Double) -> HandleDrag {
+        if let drag, drag.clipID == target.clip.id, drag.kind == kind { return drag }
+        let started = HandleDrag(
+            clipID: target.clip.id,
+            kind: kind,
+            startTransform: target.clip.transform,
+            startRect: MediaLayout.rect(naturalSize: target.naturalSize,
+                                        transform: target.clip.transform,
+                                        canvas: store.project.canvas.size))
+        drag = started
+        return started
+    }
+
+    private func apply(_ transform: Transform2D, to clipID: UUID) {
+        store.updateClip(clipID, coalesceKey: "transform:\(clipID)") { $0.transform = transform }
     }
 
     private func fit(aspect: Double, in size: CGSize) -> CGSize {

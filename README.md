@@ -22,7 +22,7 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 すでに起動している nanovid は終了させてから開き直すので、作り直したビルドが
 確実に立ち上がる。
 
-ユニットテスト（Swift Testing、155 件）:
+ユニットテスト（Swift Testing、165 件）:
 
 ```sh
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
@@ -109,6 +109,7 @@ Nanovid/
     TextTemplate.swift    テンプレート・props・ノード定義
     BuiltinTemplates.swift 同梱テンプレート（字幕・シンプル字幕・テロップ・タイトル）
     SubtitleSegmentation.swift 書き起こしを字幕の枚数に割る（純ロジック・テスト対象）
+    MediaLayout.swift     映像・画像の配置計算（コンポジタとハンドルが共有）
   Render/     AVFoundation への変換と描画
     CompositionBuilder.swift  Project → AVMutableComposition + AVVideoComposition
     NanovidCompositor.swift   AVVideoCompositing 実装（Core Image 合成）
@@ -195,6 +196,22 @@ AVFoundation のビデオコンポジションは、合成対象の映像トラ�
    読点があればそこを優先する
 
 合成音声のように間が無い素材でも、句読点を手がかりに文の切れ目で割れる。
+
+## プレビュー上での配置
+
+映像や画像のクリップを 1 つ選ぶと、プレビューに枠と四隅のハンドルが出る。
+その時刻に映っているものだけが対象。
+
+- 枠の中をドラッグ → 移動
+- 四隅をドラッグ → 拡大縮小（掴んだ隅の対角は動かない、縦横の比は保つ）
+
+位置と大きさの計算は `MediaLayout` にまとめ、**コンポジタとハンドルの両方が
+そこを通る**。別々に計算すると、掴んだ枠と実際に映っているものがずれる。
+
+ハンドルのドラッグも、タイムラインと同じく名前付き座標空間で測る。ハンドル自身が
+動くので、ジェスチャ既定のローカル空間だと位置が振動する。
+
+テキストはテンプレートの相対座標で配置しているため、この枠の対象外。
 
 ## 切り抜き（範囲を抜いて詰める）
 

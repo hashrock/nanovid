@@ -107,17 +107,16 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
     }
 
     /// 映像を「キャンバスに収める」基準配置にしたうえで、クリップの変形を適用する。
+    /// 位置と大きさの計算は MediaLayout と共有する。プレビューのハンドルが
+    /// 実際に映るものとずれないようにするため。
     private func fitTransform(for size: CGSize, in canvas: CGSize, layer: RenderLayer) -> CGAffineTransform {
         guard size.width > 0, size.height > 0 else { return .identity }
-        let fit = min(canvas.width / size.width, canvas.height / size.height)
-        let scale = fit * layer.transform.scale
-        let dx = layer.transform.position.x * canvas.width
-        let dy = -layer.transform.position.y * canvas.height   // 画面下方向を正にする
-        let cx = canvas.width / 2 + dx
-        let cy = canvas.height / 2 + dy
+        let rect = MediaLayout.rect(naturalSize: size, transform: layer.transform, canvas: canvas)
+        let scale = rect.width / size.width
 
+        // Core Image は左下原点なので y を反転して渡す。
         return CGAffineTransform.identity
-            .translatedBy(x: cx, y: cy)
+            .translatedBy(x: rect.midX, y: canvas.height - rect.midY)
             .rotated(by: layer.transform.rotation)
             .scaledBy(x: scale, y: scale)
             .translatedBy(x: -size.width / 2, y: -size.height / 2)

@@ -18,13 +18,13 @@ enum SelfTest {
             var p = Project.starter()
             p.name = "demo"
             let lines = [
-                (0.0, 2.4, 0, "はじめに"),
-                (2.8, 3.2, 1, "縁取りだけのシンプル字幕"),
-                (6.4, 2.6, 2, "左下のテロップ"),
-                (9.6, 3.4, 0, "最後のまとめ"),
+                (0.0, 2.4, "字幕", "はじめに"),
+                (2.8, 3.2, "シンプル字幕", "縁取りだけのシンプル字幕"),
+                (6.4, 2.6, "テロップ（左下）", "左下のテロップ"),
+                (9.6, 3.4, "字幕", "最後のまとめ"),
             ]
-            for (start, duration, templateIndex, text) in lines {
-                let template = p.textTemplates[templateIndex]
+            for (start, duration, templateName, text) in lines {
+                let template = try template(templateName, in: p)
                 p.tracks[1].clips.append(Clip(
                     start: start, duration: duration,
                     content: .text(TextInstance(templateID: template.id,
@@ -38,14 +38,16 @@ enum SelfTest {
                     sem.signal()
                 }
                 sem.wait()
-                if let asset, let track = p.tracks.firstIndex(where: { $0.kind == .audio }) {
+                let kind: TrackKind = asset?.kind == .audio ? .audio : .video
+                if let asset, let track = p.tracks.firstIndex(where: { $0.kind == kind }) {
                     p.assets.append(asset)
                     p.tracks[track].clips = [
-                        Clip(name: asset.displayName, start: 0, duration: asset.duration,
+                        Clip(name: asset.displayName, start: 0,
+                             duration: asset.kind == .image ? 5 : asset.duration,
                              content: .media(assetID: asset.id, sourceStart: 0))
                     ]
-                    // 音声を試すときはテロップが邪魔なので消しておく。
-                    for i in p.tracks.indices where p.tracks[i].kind == .video {
+                    // 素材を試すときはテロップが邪魔なので消しておく。
+                    for i in p.tracks.indices where p.tracks[i].kind == .video && i != track {
                         p.tracks[i].clips = []
                     }
                 }
@@ -128,13 +130,22 @@ enum SelfTest {
         exit(0)
     }
 
+    /// テンプレートは名前で引く。添字だと、同梱テンプレートを足したときに
+    /// 黙って別のテンプレートを使ってしまう。
+    private static func template(_ name: String, in project: Project) throws -> TextTemplate {
+        guard let found = project.textTemplates.first(where: { $0.name == name }) else {
+            throw Fail("テンプレート「\(name)」が見つかりません")
+        }
+        return found
+    }
+
     private static func run(in dir: URL) async throws {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
 
         // --- 1) テキストのみ ---
         var p1 = Project.starter()
         p1.canvas.backgroundColor = RGBAColor(hex: "#101820")!
-        let title = p1.textTemplates[1]
+        let title = try template("タイトル", in: p1)
         var titleClip = Clip(start: 0, duration: 3, content: .text(TextInstance(
             templateID: title.id,
             props: ["title": .string("nanovid 自己テスト"), "subtitle": .string("text only pass")]
@@ -164,7 +175,7 @@ enum SelfTest {
         vClip.fade = Fade(inDuration: 0.3, outDuration: 0.3)
         p2.tracks[0].clips = [vClip]
 
-        let sub = p2.textTemplates[0]
+        let sub = try template("字幕", in: p2)
         var subClip = Clip(start: 0.5, duration: 2.0, content: .text(TextInstance(
             templateID: sub.id,
             props: ["text": .string("字幕の背景が文字幅に追従する"),
@@ -200,7 +211,7 @@ enum SelfTest {
         p3.tracks[1].clips = [
             overlay,
             Clip(start: 1.2, duration: 0.6, content: .text(TextInstance(
-                templateID: p3.textTemplates[1].id,   // シンプル字幕（縁取り）
+                templateID: try template("シンプル字幕", in: p3).id,
                 props: ["text": .string("縁取りのテスト Outline")]))),
         ]
 

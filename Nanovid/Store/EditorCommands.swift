@@ -407,6 +407,18 @@ extension EditorStore {
 
     // MARK: - クリップ属性
 
+    /// クリップを 1 つだけ書き換える。
+    /// coalesceKey を渡すと、ドラッグ中の連続変更が 1 つの undo にまとまる。
+    func updateClip(_ id: UUID, coalesceKey: String? = nil, _ body: (inout Clip) -> Void) {
+        edit(coalescing: coalesceKey) { p in
+            for ti in p.tracks.indices {
+                for ci in p.tracks[ti].clips.indices where p.tracks[ti].clips[ci].id == id {
+                    body(&p.tracks[ti].clips[ci])
+                }
+            }
+        }
+    }
+
     func updateSelectedClips(_ body: @escaping (inout Clip) -> Void) {
         let ids = selectedClipIDs
         guard !ids.isEmpty else { return }
