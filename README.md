@@ -25,6 +25,13 @@ xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは �
 目盛りの刻み幅・ズーム時のスクロール位置・分割／トリム・フェード計算・
 テンプレートの props 解決・プロジェクトの保存読込・合成命令の連続性などを検証している。
 
+起動時にプロジェクトを開く / 動作確認用のプロジェクトを書き出す:
+
+```sh
+Nanovid --open path/to/project.nanovid
+Nanovid --write-demo <出力ディレクトリ>     # テキストを並べたデモを作って終了
+```
+
 描画から書き出しまでを GUI なしで通すテスト:
 
 ```sh

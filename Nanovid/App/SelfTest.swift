@@ -6,6 +6,38 @@ import Foundation
 /// 2) 1 の出力と生成した WAV を素材に、映像＋音声＋テロップを重ねて書き出す
 enum SelfTest {
 
+    /// `Nanovid --write-demo <ディレクトリ>` で、動作確認用のプロジェクトを書き出して終了する。
+    static func writeDemoIfRequested() -> Bool {
+        let args = CommandLine.arguments
+        guard let idx = args.firstIndex(of: "--write-demo"), args.count > idx + 1 else { return false }
+        let dir = URL(fileURLWithPath: args[idx + 1])
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            var p = Project.starter()
+            p.name = "demo"
+            let lines = [
+                (0.0, 2.4, 0, "はじめに"),
+                (2.8, 3.2, 1, "縁取りだけのシンプル字幕"),
+                (6.4, 2.6, 2, "左下のテロップ"),
+                (9.6, 3.4, 0, "最後のまとめ"),
+            ]
+            for (start, duration, templateIndex, text) in lines {
+                let template = p.textTemplates[templateIndex]
+                p.tracks[1].clips.append(Clip(
+                    start: start, duration: duration,
+                    content: .text(TextInstance(templateID: template.id,
+                                                props: ["text": .string(text)]))))
+            }
+            let url = dir.appendingPathComponent("demo.nanovid")
+            try ProjectIO.save(p, to: url)
+            print(url.path)
+            exit(0)
+        } catch {
+            FileHandle.standardError.write("FAIL: \(error.localizedDescription)\n".data(using: .utf8)!)
+            exit(1)
+        }
+    }
+
     static func runIfRequested() -> Bool {
         let args = CommandLine.arguments
         guard let idx = args.firstIndex(of: "--selftest") else { return false }

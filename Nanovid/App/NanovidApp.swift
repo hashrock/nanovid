@@ -4,6 +4,16 @@ import SwiftUI
 struct NanovidApp: App {
     init() {
         _ = SelfTest.runIfRequested()
+        _ = SelfTest.writeDemoIfRequested()
+    }
+
+    /// `Nanovid --open <ファイル>` で起動時にプロジェクトを開く。
+    private func openProjectFromArguments() {
+        let args = CommandLine.arguments
+        guard let i = args.firstIndex(of: "--open"), args.count > i + 1 else { return }
+        let url = URL(fileURLWithPath: args[i + 1])
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        store.open(url: url)
     }
 
     @State private var store = EditorStore()
@@ -12,6 +22,7 @@ struct NanovidApp: App {
         WindowGroup {
             ContentView(store: store)
                 .frame(minWidth: 1100, minHeight: 700)
+                .onAppear(perform: openProjectFromArguments)
         }
         .windowToolbarStyle(.unified)
         .commands {

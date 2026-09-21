@@ -143,10 +143,12 @@ struct TimelineView: View {
 
     private var laneArea: some View {
         GeometryReader { geo in
-            VStack(spacing: 0) {
+            // レーンの中身はビューポートより広いので、各段に実寸の幅を与えて左端に固定する。
+            // maxWidth: .infinity だけだと VStack が内容幅まで広がり、目盛りが中央寄せされてしまう。
+            VStack(alignment: .leading, spacing: 0) {
                 // 目盛りは縦スクロールしない。横だけ追従させる。
-                RulerView(store: store, width: contentWidth, scrollX: offsetX)
-                    .frame(height: Self.rulerHeight)
+                RulerView(store: store, scrollX: offsetX)
+                    .frame(width: geo.size.width, height: Self.rulerHeight, alignment: .topLeading)
                     .clipped()
 
                 VStack(alignment: .leading, spacing: 0) {
@@ -155,9 +157,12 @@ struct TimelineView: View {
                     }
                 }
                 .offset(x: -offsetX, y: -offsetY)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .frame(width: geo.size.width,
+                       height: max(0, geo.size.height - Self.rulerHeight),
+                       alignment: .topLeading)
                 .clipped()
             }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .overlay(alignment: .topLeading) { playhead }
             .background(Color(nsColor: .underPageBackgroundColor))
             .contentShape(Rectangle())
@@ -639,7 +644,6 @@ struct TimelineView: View {
 
 private struct RulerView: View {
     @Bindable var store: EditorStore
-    let width: CGFloat
     let scrollX: Double
 
     var body: some View {
