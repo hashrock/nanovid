@@ -19,6 +19,7 @@
 //
 
 import AppKit
+import ApplicationServices
 import CoreGraphics
 import Foundation
 
@@ -81,6 +82,30 @@ func findWindow(owner: String) -> Window? {
     return nil
 }
 
+/// ウィンドウを決まった大きさに直す。
+///
+/// 大きさは前回終了時のものが復元される。狭いままだと末尾のクリップが
+/// 画面の端に寄り、ドラッグの行き先がウィンドウの外へ出てしまう。
+/// 前提がそろわないまま「追従しない」と言われても原因がわからないので、
+/// 測る前にこちらからそろえる。
+func resizeWindow(owner: String, to size: CGSize) -> Bool {
+    guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.hashrock.nanovid").first
+    else { return false }
+    let element = AXUIElementCreateApplication(app.processIdentifier)
+    var windowsValue: CFTypeRef?
+    guard AXUIElementCopyAttributeValue(element, kAXWindowsAttribute as CFString, &windowsValue) == .success,
+          let windows = windowsValue as? [AXUIElement], let window = windows.first
+    else { return false }
+
+    var origin = CGPoint(x: 60, y: 60)
+    var wanted = size
+    guard let originValue = AXValueCreate(.cgPoint, &origin),
+          let sizeValue = AXValueCreate(.cgSize, &wanted) else { return false }
+    AXUIElementSetAttributeValue(window, kAXPositionAttribute as CFString, originValue)
+    AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, sizeValue)
+    return true
+}
+
 func capture(_ window: Window) -> NSBitmapImageRep? {
     let path = NSTemporaryDirectory() + "nanovid-drag-check.png"
     run("/usr/sbin/screencapture", ["-x", "-o", "-l\(window.id)", path])
@@ -116,6 +141,36 @@ func clipRects(_ rep: NSBitmapImageRep) -> [CGRect] {
         return CGRect(x: Double(run.first!), y: Double(minY),
                       width: Double(run.last! - run.first!), height: Double(maxY - minY))
     }
+}
+
+/// 押されっぱなしの修飾キーとマウスボタンを離す。
+///
+/// 前回の検証が途中で止まると、ボタンを押したままの状態が残る。
+/// その状態で leftMouseDown を送っても何も起きず、ドラッグが 1 度も
+/// 効かないまま「追従しない」と報告することになる。
+func releaseStuckInput() {
+    let src = CGEventSource(stateID: .hidSystemState)
+    let clear = CGEvent(keyboardEventSource: src, virtualKey: 55, keyDown: false)
+    clear?.type = .flagsChanged
+    clear?.flags = []
+    clear?.post(tap: .cghidEventTap)
+    usleep(50_000)
+    for key in [CGKeyCode(55), CGKeyCode(54), CGKeyCode(56), CGKeyCode(60),
+                CGKeyCode(58), CGKeyCode(61), CGKeyCode(59)] {
+        let up = CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false)
+        up?.flags = []
+        up?.post(tap: .cghidEventTap)
+        usleep(20_000)
+    }
+    let here = CGEvent(source: nil)?.location ?? .zero
+    for type: CGEventType in [.leftMouseUp, .rightMouseUp] {
+        let e = CGEvent(mouseEventSource: src, mouseType: type,
+                        mouseCursorPosition: here, mouseButton: .left)
+        e?.flags = []
+        e?.post(tap: .cghidEventTap)
+        usleep(50_000)
+    }
+    usleep(200_000)
 }
 
 func post(_ type: CGEventType, _ p: CGPoint) {
@@ -202,6 +257,11 @@ func expect(_ label: String, actual: Double, expected: Double) -> Bool {
 
 print("nanovid タイムラインのドラッグ検証")
 
+releaseStuckInput()
+if NSEvent.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty == false {
+    print("（修飾キーが押されたままです: \(NSEvent.modifierFlags)）")
+}
+
 try? FileManager.default.removeItem(at: workDir)
 try? FileManager.default.createDirectory(at: workDir, withIntermediateDirectories: true)
 run(binary, ["--write-demo", workDir.path])
@@ -220,6 +280,12 @@ while findWindow(owner: "nanovid") == nil {
     if waited > 30 { fail("ウィンドウが開きません") }
 }
 sleep(2)
+
+// 前回の大きさが残っていると、末尾のクリップのドラッグ先が窓の外へ出る。
+if !resizeWindow(owner: "nanovid", to: CGSize(width: 1400, height: 820)) {
+    print("（ウィンドウの大きさを直せませんでした。アクセシビリティの許可を確認してください）")
+}
+sleep(1)
 
 // 倍率が想定どおりか確認する。ここがずれると以降の期待値が合わなくなる。
 // 末尾のクリップは画面外へはみ出して幅が切れるので、先頭のクリップで測る。

@@ -146,37 +146,21 @@ enum CompositionBuilder {
         try await insertSpacer(into: composition, upTo: end)
 
         // MARK: 区間分割（レイヤー構成が変わる時刻で切る）
-        //
-        // 境界は先に CMTime へ落としてから重複を除く。Double のまま集めると、
-        // 同じ瞬間でも計算の経路によって下位ビットがずれ（例: 2.933333333333333 と
-        // 2.9333333333333336）、長さがほぼ 0 の区間ができる。それを飛ばすと
-        // 命令列に隙間が空き、AVFoundation は何も描かなくなる（プレビューが真っ黒になる）。
-        var times: [CMTime] = [.zero, end]
-        for layer in pending {
-            times.append(clamped(layer.start, to: end))
-            times.append(clamped(layer.start + layer.duration, to: end))
-        }
-        var boundaries: [CMTime] = []
-        for time in times.sorted(by: <) where boundaries.last != time {
-            boundaries.append(time)
-        }
-
-        // 連続する境界から順に作るので、隙間も長さ 0 も生まれない。
-        var instructions: [NanovidInstruction] = []
-        for i in 0..<max(0, boundaries.count - 1) {
-            let range = CMTimeRange(start: boundaries[i], end: boundaries[i + 1])
-            let mid = (boundaries[i].secondsOrZero + boundaries[i + 1].secondsOrZero) / 2
-            let active = pending
-                .filter { $0.start <= mid && mid < $0.start + $0.duration }
-                .sorted { $0.z < $1.z }
-                .map {
-                    RenderLayer(source: $0.source, clipStart: $0.start, clipDuration: $0.duration,
-                                transform: $0.transform, opacity: $0.opacity, fade: $0.fade)
-                }
-            instructions.append(NanovidInstruction(
-                timeRange: range, layers: active,
+        let plan = InstructionPlan.segments(
+            for: pending.map { PlannedLayer(start: $0.start, duration: $0.duration, z: $0.z) },
+            end: end)
+        let instructions = plan.map { segment in
+            let active = segment.layerIndices.map { i -> RenderLayer in
+                let layer = pending[i]
+                return RenderLayer(source: layer.source,
+                                   clipStart: layer.start, clipDuration: layer.duration,
+                                   transform: layer.transform, opacity: layer.opacity,
+                                   fade: layer.fade)
+            }
+            return NanovidInstruction(
+                timeRange: segment.range, layers: active,
                 backgroundColor: canvas.backgroundColor, canvasSize: canvasSize,
-                alwaysRenders: constantFrameRate))
+                alwaysRenders: constantFrameRate)
         }
 
         let videoComposition = AVMutableVideoComposition()
@@ -195,12 +179,6 @@ enum CompositionBuilder {
 
         return BuiltComposition(composition: composition, videoComposition: videoComposition,
                                 audioMix: mix, duration: end.secondsOrZero)
-    }
-
-    /// 0 以上 end 以下に収めて CMTime にする。
-    private static func clamped(_ seconds: Double, to end: CMTime) -> CMTime {
-        let time = max(0, seconds).cmTime
-        return time > end ? end : time
     }
 
     // MARK: - 土台トラック
