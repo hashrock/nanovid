@@ -23,6 +23,7 @@ Developer ID 署名と公証済みなので、初回起動の警告は出ない�
 | | |
 |---|---|
 | 動作環境 | macOS 15 以降 |
+| 表示言語 | 日本語・英語（システムの言語に従う）|
 | 字幕の自動生成 | macOS 26 以降（`SpeechAnalyzer` を使うため）|
 
 AVFoundation まわりで踏んだ問題と、調べて分かったことは [issues.md](issues.md) にある。
@@ -183,6 +184,9 @@ Scripts/release.sh
 
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png
+
+# 文言カタログと Swift 側のずれを見る（test.sh と CI から自動で走る）
+Scripts/check-localization.py
 ```
 
 以前はマウス操作を合成してドラッグの追従を確かめるスクリプトも置いていたが、
@@ -192,6 +196,36 @@ swift Scripts/window-shot.swift nanovid /tmp/shot.png
 ドラッグの計算そのものは `TimelineSnap` / `TimelineScroll` の性質テストで見る。
 掴んだ点からのズレだけで目標位置が決まること（ビューが動いても結果が変わらない）
 が本体なので、そこを押さえておけば十分だった。
+
+## 表示言語
+
+ソース言語は日本語。`Text("保存")` のようなリテラルはそのまま
+`Localizable.xcstrings` のキーになり、英語の訳が当たる。SwiftUI を通らない側
+（`NSAlert`、`LocalizedError` の文面、`String` を返す enum の表示名）は
+`L()` で自分で引く。`Nanovid/UI/Localized.swift` にまとめてある。
+
+保存する文字列は 2 種類に分けて扱う。
+
+| | 扱い | 例 |
+|---|---|---|
+| 文書に入る表示名 | 原語（日本語）で保存し、出すときに `LName()` で訳す | テンプレート名・レイヤー名・props の表示名 |
+| 動画に描かれる中身、ファイル名のもと | 作った時点の言語で確定させる | props の既定値、`無題`、トラック名 |
+
+前者を作った時点で訳すと、英語環境で作った `.nanovid` を日本語環境で開いても
+英語のまま固まる。後者は逆に、動画の中身や保存ファイル名が開いた環境の言語で
+揺れては困る。ユーザーが自分で付けた名前はカタログに無いので `LName()` を
+素通りする。名前を打ち替えたときだけ、その言語の文字列が保存される。
+
+英語の複数形は xcstrings の `variations.plural` に持たせてある（`%lld clip` /
+`%lld clips`）。日本語には CLDR の単数形が無いので、「1 個のときは数を出さない」
+たぐいの出し分けはカタログに寄せられず、呼ぶ側で分ける。
+
+`L()` でくるんだ文言は Xcode の自動抽出に載らない（抽出は
+`String(localized:)` の呼び出し位置を見るので、関数で包むと外れる）。
+落としても誰も気づかないため、`Scripts/check-localization.py` が
+カタログの取りこぼし・未訳・書式指定子の食い違いを見張っていて、
+`Scripts/test.sh` と CI から走る。組み立てた結果そのものは
+`NanovidTests/LocalizationTests.swift` で見ている。
 
 ## 構成
 
@@ -222,6 +256,9 @@ Nanovid/
     PaneDivider.swift     自前の仕切りと下段タブ
     TextClipsPane.swift   下段「字幕」タブ（一覧と一括編集）
     TimelineTicks.swift   目盛りの刻み幅とスクロール計算（純ロジック・テスト対象）
+    Localized.swift       SwiftUI を通らない文言の入口（L / LName・後述）
+  Localizable.xcstrings   日本語をキーにした文言カタログ（英語の訳つき）
+  InfoPlist.xcstrings     マイクと音声認識の用途説明
   Resources/
     blank.mp4   16×16・60秒の黒素材（後述）
 ```

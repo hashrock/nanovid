@@ -9,7 +9,7 @@ enum SubtitleGeneration {
         return false
     }
 
-    static let requirement = "字幕の自動生成には macOS 26 以降が必要です。"
+    static var requirement: String { L("字幕の自動生成には macOS 26 以降が必要です。") }
 }
 
 /// 字幕の自動生成の進み具合。
@@ -31,11 +31,11 @@ struct SubtitleProgress: Equatable, Sendable {
 
         var label: String {
             switch self {
-            case .preparing: return "準備中"
-            case .downloadingModel: return "言語モデルを取り寄せ中"
-            case .buildingAudio: return "音声をまとめ中"
-            case .listening: return "聞き取り中"
-            case .finishing: return "字幕にしています"
+            case .preparing: return L("準備中")
+            case .downloadingModel: return L("言語モデルを取り寄せ中")
+            case .buildingAudio: return L("音声をまとめ中")
+            case .listening: return L("聞き取り中")
+            case .finishing: return L("字幕にしています")
             }
         }
     }
@@ -62,11 +62,11 @@ enum TranscriptionError: LocalizedError {
         case .unavailable:
             return SubtitleGeneration.requirement
         case .unsupportedLocale(let name):
-            return "この言語には対応していません: \(name)"
+            return L("この言語には対応していません: \(name)")
         case .noAudio:
-            return "タイムラインに音声がありません。"
+            return L("タイムラインに音声がありません。")
         case .readFailed(let message):
-            return "音声を読み込めませんでした: \(message)"
+            return L("音声を読み込めませんでした: \(message)")
         }
     }
 }
@@ -152,11 +152,11 @@ final class Transcriber {
         output.audioMix = built.audioMix
         output.alwaysCopiesSampleData = false
         guard reader.canAdd(output) else {
-            throw TranscriptionError.readFailed("音声出力を追加できません")
+            throw TranscriptionError.readFailed(L("音声出力を追加できません"))
         }
         reader.add(output)
         guard reader.startReading() else {
-            throw TranscriptionError.readFailed(reader.error?.localizedDescription ?? "不明なエラー")
+            throw TranscriptionError.readFailed(reader.error?.localizedDescription ?? L("不明なエラー"))
         }
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])

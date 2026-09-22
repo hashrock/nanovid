@@ -8,6 +8,7 @@
 #                                        スイート（または 1 件）だけ走らせる
 #   Scripts/test.sh --release            Release 構成で走らせる
 #   Scripts/test.sh --verbose            xcodebuild の出力をそのまま流す
+#   Scripts/test.sh --skip-l10n          文言カタログの検査を飛ばす
 #
 # 速い層は関数レベルのテストだけ。合成を組んで絵を描くもの、実ファイルを
 # AVFoundation に読ませるものは重い層に置いてあり、既定では飛ばす（詳しくは
@@ -20,6 +21,7 @@ CONFIG=Debug
 TIER=fast
 ONLY=""
 VERBOSE=0
+L10N=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -27,6 +29,7 @@ while [ $# -gt 0 ]; do
         --release)  CONFIG=Release ;;
         --debug)    CONFIG=Debug ;;
         --verbose)  VERBOSE=1 ;;
+        --skip-l10n) L10N=0 ;;
         --only)
             shift
             if [ $# -eq 0 ]; then
@@ -47,6 +50,12 @@ while [ $# -gt 0 ]; do
     esac
     shift
 done
+
+# ビルドより先に文言のずれを見る。L() でくるんだものは Xcode が拾わないので、
+# ここで見ないとカタログから落ちたことに誰も気づかない（Scripts/check-localization.py）。
+if [ "$L10N" = 1 ]; then
+    python3 Scripts/check-localization.py --quiet
+fi
 
 set -- test -project Nanovid.xcodeproj -scheme Nanovid -configuration "$CONFIG" \
        -destination "platform=macOS"
@@ -75,7 +84,12 @@ else
     else
         STATUS=1
         echo "テストに失敗しました:" >&2
-        grep -E "error:|✘|failed|Failing tests" "$LOG" >&2 || tail -40 "$LOG" >&2
+        # 「Failing tests:」は見出しで、落ちた名前は次の行から並ぶ。1 行ずつ
+        # 拾うと名前が落ちるので後ろも一緒に出す。拾えなかったときのために
+        # 末尾もそのまま出す。
+        grep -A 20 -E "error:|✘|Failing tests" "$LOG" >&2 || true
+        echo "--- ログの末尾 ---" >&2
+        tail -40 "$LOG" >&2
     fi
     rm -f "$LOG"
 fi

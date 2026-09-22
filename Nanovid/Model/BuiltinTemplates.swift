@@ -2,6 +2,11 @@ import CoreGraphics
 import Foundation
 
 /// 出荷時に同梱するテンプレート。アプリ内エディタで自由に複製・改変できる。
+///
+/// テンプレート名・レイヤー名・props の表示名は文書に保存されるので、原語
+/// （日本語）のまま置いて表示のときに `LName` で引く。こうしておくと英語環境で
+/// 作った .nanovid を日本語環境で開いても日本語で出る。逆に props の
+/// `defaultValue` は動画に描かれる中身なので、作った時点の言語で確定させる。
 extension TextTemplate {
 
     /// 字幕：背景板がテキストの実測幅に追従する。
@@ -35,7 +40,7 @@ extension TextTemplate {
             name: "字幕",
             nodes: [plate, textNode],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("ここに字幕")),
+                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string(L("ここに字幕"))),
                 PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
                 PropDef(key: "plateColor", label: "背景色", type: .color,
                         defaultValue: .color(RGBAColor(r: 0, g: 0, b: 0, a: 0.66))),
@@ -65,7 +70,7 @@ extension TextTemplate {
             name: "シンプル字幕",
             nodes: [node],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("ここに字幕")),
+                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string(L("ここに字幕"))),
                 PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
                 PropDef(key: "strokeColor", label: "縁の色", type: .color, defaultValue: .color(.black)),
             ]
@@ -102,7 +107,7 @@ extension TextTemplate {
             name: "テロップ（左下）",
             nodes: [plate, text],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("補足メモ")),
+                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string(L("補足メモ"))),
                 PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
                 PropDef(key: "plateColor", label: "背景色", type: .color,
                         defaultValue: .color(RGBAColor(hex: "#000000A6") ?? .black)),
@@ -145,7 +150,7 @@ extension TextTemplate {
             name: "タイトル",
             nodes: [bar, title, sub],
             props: [
-                PropDef(key: "title", label: "見出し", type: .string, defaultValue: .string("タイトル")),
+                PropDef(key: "title", label: "見出し", type: .string, defaultValue: .string(L("タイトル"))),
                 PropDef(key: "subtitle", label: "サブ", type: .string, defaultValue: .string("subtitle")),
                 PropDef(key: "titleColor", label: "見出し色", type: .color, defaultValue: .color(.white)),
                 PropDef(key: "accent", label: "アクセント", type: .color,

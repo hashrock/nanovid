@@ -182,11 +182,13 @@ struct ClipboardTests {
     @Test("同じ名前のトラックがあればそこへ戻る")
     func pasteTargetPrefersSameName() {
         let project = Project.starter()
+        // トラック名は訳されるので、リテラルではなく作った側の名前で引く。
+        let telop = project.tracks[1].name
         let entry = ClipboardPayload.Entry(
             clip: Clip(start: 0, duration: 1, content: .text(TextInstance(templateID: UUID()))),
-            trackName: "テロップ", trackKind: .video)
+            trackName: telop, trackKind: .video)
         let index = EditorStore.pasteTarget(for: entry, in: project, preferring: nil)
-        #expect(project.tracks[index!].name == "テロップ")
+        #expect(project.tracks[index!].name == telop)
     }
 
     @Test("名前が合わなければ選択中のトラックへ")
@@ -213,11 +215,12 @@ struct ClipboardTests {
     @Test("ロックしたトラックへは貼らない")
     func pasteTargetSkipsLockedTracks() {
         var project = Project.starter()
-        project.tracks[1].isLocked = true      // テロップ
+        let telop = project.tracks[1].name     // テロップ
+        project.tracks[1].isLocked = true
         let entry = ClipboardPayload.Entry(
             clip: Clip(start: 0, duration: 1, content: .text(TextInstance(templateID: UUID()))),
-            trackName: "テロップ", trackKind: .video)
+            trackName: telop, trackKind: .video)
         let index = EditorStore.pasteTarget(for: entry, in: project, preferring: nil)
-        #expect(project.tracks[index!].name != "テロップ")
+        #expect(project.tracks[index!].name != telop)
     }
 }

@@ -19,10 +19,10 @@ enum SelfTest {
             var p = Project.starter()
             p.name = "demo"
             let lines = [
-                (0.0, 2.4, "字幕", "はじめに"),
-                (2.8, 3.2, "シンプル字幕", "縁取りだけのシンプル字幕"),
-                (6.4, 2.6, "テロップ（左下）", "左下のテロップ"),
-                (9.6, 3.4, "字幕", "最後のまとめ"),
+                (0.0, 2.4, TextTemplate.subtitle().name, "はじめに"),
+                (2.8, 3.2, TextTemplate.plainSubtitle().name, "縁取りだけのシンプル字幕"),
+                (6.4, 2.6, TextTemplate.lowerLeftNote().name, "左下のテロップ"),
+                (9.6, 3.4, TextTemplate.subtitle().name, "最後のまとめ"),
             ]
             for (start, duration, templateName, text) in lines {
                 let template = try template(templateName, in: p)
@@ -303,7 +303,7 @@ enum SelfTest {
         vClip.fade = Fade(inDuration: 0.3, outDuration: 0.3)
         p2.tracks[0].clips = [vClip]
 
-        let sub = try template("字幕", in: p2)
+        let sub = try template(TextTemplate.subtitle().name, in: p2)
         var subClip = Clip(start: 0.5, duration: 2.0, content: .text(TextInstance(
             templateID: sub.id,
             props: ["text": .string("字幕の背景が文字幅に追従する"),
@@ -339,7 +339,7 @@ enum SelfTest {
         p3.tracks[1].clips = [
             overlay,
             Clip(start: 1.2, duration: 0.6, content: .text(TextInstance(
-                templateID: try template("シンプル字幕", in: p3).id,
+                templateID: try template(TextTemplate.plainSubtitle().name, in: p3).id,
                 props: ["text": .string("縁取りのテスト Outline")]))),
         ]
 

@@ -14,7 +14,7 @@ extension EditorStore {
         }
         guard subtitleProgress == nil else { return }
         guard duration > 0 else {
-            buildError = "タイムラインに何も置かれていません。"
+            buildError = L("タイムラインに何も置かれていません。")
             return
         }
 
@@ -35,7 +35,7 @@ extension EditorStore {
             subtitleProgress = SubtitleProgress(phase: .finishing, fraction: nil)
             let lines = SubtitleSegmentation.lines(from: words, options: options)
             guard !lines.isEmpty else {
-                buildError = "音声から文字を聞き取れませんでした。"
+                buildError = L("音声から文字を聞き取れませんでした。")
                 return
             }
             applySubtitles(lines, templateID: templateID)
@@ -54,13 +54,13 @@ extension EditorStore {
     func applySubtitles(_ lines: [SubtitleLine], templateID: UUID) {
         guard let template = project.template(templateID),
               let key = template.props.first(where: { $0.type == .string })?.key else {
-            buildError = "テンプレートに文字を入れる項目がありません。"
+            buildError = L("テンプレートに文字を入れる項目がありません。")
             return
         }
 
         var made: Set<UUID> = []
         edit { p in
-            var track = Track(name: Self.uniqueTrackName("字幕（自動）", in: p), kind: .video)
+            var track = Track(name: Self.uniqueTrackName(L("字幕（自動）"), in: p), kind: .video)
             track.clips = lines.map { line in
                 let clip = Clip(start: p.canvas.snap(line.start),
                                 duration: max(p.canvas.frameDuration, p.canvas.snap(line.duration)),

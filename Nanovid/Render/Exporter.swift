@@ -5,7 +5,7 @@ struct ExportSettings: Hashable {
     enum Codec: String, CaseIterable, Identifiable {
         case h264, hevc
         var id: String { rawValue }
-        var label: String { self == .h264 ? "H.264 (互換性重視)" : "HEVC (高圧縮)" }
+        var label: String { self == .h264 ? L("H.264 (互換性重視)") : L("HEVC (高圧縮)") }
         var avCodec: AVVideoCodecType { self == .h264 ? .h264 : .hevc }
     }
 
@@ -14,9 +14,9 @@ struct ExportSettings: Hashable {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .standard: return "標準"
-            case .high: return "高"
-            case .max: return "最高"
+            case .standard: return L("標準")
+            case .high: return L("高")
+            case .max: return L("最高")
             }
         }
         /// 画素あたりのビット数の目安。
@@ -48,9 +48,9 @@ enum ExportError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .cancelled: return "書き出しを中止しました。"
-        case .reader(let m): return "読み込みに失敗しました: \(m)"
-        case .writer(let m): return "書き出しに失敗しました: \(m)"
+        case .cancelled: return L("書き出しを中止しました。")
+        case .reader(let m): return L("読み込みに失敗しました: \(m)")
+        case .writer(let m): return L("書き出しに失敗しました: \(m)")
         }
     }
 }
@@ -110,7 +110,7 @@ final class Exporter {
         )
         videoOutput.videoComposition = built.videoComposition
         videoOutput.alwaysCopiesSampleData = false
-        guard reader.canAdd(videoOutput) else { throw ExportError.reader("映像出力を追加できません") }
+        guard reader.canAdd(videoOutput) else { throw ExportError.reader(L("映像出力を追加できません")) }
         reader.add(videoOutput)
 
         let audioTracks = built.composition.tracks(withMediaType: .audio)
@@ -154,7 +154,7 @@ final class Exporter {
             AVVideoCompressionPropertiesKey: compression,
         ])
         videoInput.expectsMediaDataInRealTime = false
-        guard writer.canAdd(videoInput) else { throw ExportError.writer("映像入力を追加できません") }
+        guard writer.canAdd(videoInput) else { throw ExportError.writer(L("映像入力を追加できません")) }
         writer.add(videoInput)
 
         var audioInput: AVAssetWriterInput?
@@ -173,10 +173,10 @@ final class Exporter {
         }
 
         guard writer.startWriting() else {
-            throw ExportError.writer(writer.error?.localizedDescription ?? "不明なエラー")
+            throw ExportError.writer(writer.error?.localizedDescription ?? L("不明なエラー"))
         }
         guard reader.startReading() else {
-            throw ExportError.reader(reader.error?.localizedDescription ?? "不明なエラー")
+            throw ExportError.reader(reader.error?.localizedDescription ?? L("不明なエラー"))
         }
         // 範囲の先頭を出力の 0 秒に対応させる。AVAssetWriter がこの差を引いてくれる。
         writer.startSession(atSourceTime: outputStart.cmTime)
@@ -205,12 +205,12 @@ final class Exporter {
         }
         if reader.status == .failed {
             writer.cancelWriting()
-            throw ExportError.reader(reader.error?.localizedDescription ?? "不明なエラー")
+            throw ExportError.reader(reader.error?.localizedDescription ?? L("不明なエラー"))
         }
 
         await writer.finishWriting()
         if writer.status == .failed {
-            throw ExportError.writer(writer.error?.localizedDescription ?? "不明なエラー")
+            throw ExportError.writer(writer.error?.localizedDescription ?? L("不明なエラー"))
         }
         progress(1)
     }

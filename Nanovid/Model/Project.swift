@@ -9,9 +9,9 @@ enum AssetKind: String, Codable, Hashable {
 
     var label: String {
         switch self {
-        case .video: return "動画"
-        case .audio: return "音声"
-        case .image: return "画像"
+        case .video: return L("動画")
+        case .audio: return L("音声")
+        case .image: return L("画像")
         }
     }
 }
@@ -93,8 +93,8 @@ enum TrackKind: String, Codable, Hashable {
 
     var label: String {
         switch self {
-        case .video: return "映像"
-        case .audio: return "音声"
+        case .video: return L("映像")
+        case .audio: return L("音声")
         }
     }
 }
@@ -130,7 +130,7 @@ struct OutputRange: Codable, Hashable {
 
 struct Project: Codable, Hashable {
     var formatVersion: Int = 1
-    var name: String = "無題"
+    var name: String = L("無題")
     var canvas: CanvasSpec = CanvasSpec()
     var assets: [MediaAsset] = []
     /// 配列の先頭が最背面。UI では上下反転して表示する。
@@ -193,9 +193,9 @@ struct Project: Codable, Hashable {
         var p = Project()
         p.canvas = CanvasSpec(width: 1920, height: 1080, fps: 30)
         p.tracks = [
-            Track(name: "映像 1", kind: .video),
-            Track(name: "テロップ", kind: .video),
-            Track(name: "音声 1", kind: .audio),
+            Track(name: L("映像 1"), kind: .video),
+            Track(name: L("テロップ"), kind: .video),
+            Track(name: L("音声 1"), kind: .audio),
         ]
         p.textTemplates = [.subtitle(), .plainSubtitle(), .lowerLeftNote(), .title()]
         return p

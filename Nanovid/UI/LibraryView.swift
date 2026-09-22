@@ -7,7 +7,7 @@ struct LibraryView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case assets, templates
         var id: String { rawValue }
-        var label: String { self == .assets ? "素材" : "テンプレート" }
+        var label: String { self == .assets ? L("素材") : L("テンプレート") }
     }
 
     @State private var tab: Tab = .assets
@@ -74,7 +74,7 @@ struct LibraryView: View {
         panel.allowsMultipleSelection = true
         panel.canChooseDirectories = false
         panel.allowedContentTypes = ProjectIO.mediaTypes
-        panel.message = "動画・音声・画像を選んでください"
+        panel.message = L("動画・音声・画像を選んでください")
         guard panel.runModal() == .OK else { return }
         let urls = panel.urls
         Task { @MainActor in _ = await store.importAssets(urls: urls) }
@@ -95,7 +95,7 @@ struct LibraryView: View {
             t.clips.contains { $0.content.assetID == asset.id }
         }
         if inUse {
-            store.buildError = "タイムラインで使用中の素材は取り除けません。"
+            store.buildError = L("タイムラインで使用中の素材は取り除けません。")
             return
         }
         store.edit { $0.assets.removeAll { $0.id == asset.id } }
@@ -129,7 +129,7 @@ struct LibraryView: View {
                         name: "新しいテンプレート",
                         nodes: [TemplateNode(name: "本文", kind: .text(TextNodeSpec(text: .prop("text"))))],
                         props: [PropDef(key: "text", label: "テキスト", type: .string,
-                                        defaultValue: .string("テキスト"))]
+                                        defaultValue: .string(L("ここにテキスト")))]
                     )
                     store.upsertTemplate(new)
                     editingTemplateID = new.id
@@ -199,7 +199,7 @@ private struct TemplateRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-                Text(template.name).font(.caption).lineLimit(1)
+                Text(LName(template.name)).font(.caption).lineLimit(1)
                 Text("\(template.props.count) props · 使用 \(usageCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

@@ -13,10 +13,9 @@ enum MediaProblem: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .undecodable(let name, let codec):
-            return "「\(name)」はこの Mac で再生できない形式です（\(codec)）。"
-                + "H.264 や HEVC の MP4 / MOV に変換してから読み込んでください。"
+            return L("「\(name)」はこの Mac で再生できない形式です（\(codec)）。H.264 や HEVC の MP4 / MOV に変換してから読み込んでください。")
         case .truncated(let name):
-            return "「\(name)」は最後まで読めません。ファイルが途中で切れているかもしれません。"
+            return L("「\(name)」は最後まで読めません。ファイルが途中で切れているかもしれません。")
         }
     }
 }
@@ -110,7 +109,7 @@ extension AssetCache {
 
     /// 表示用のコーデック名（"vp09" のような 4 文字）。
     static func codecName(of track: AVAssetTrack) async throws -> String {
-        guard let description = try await track.load(.formatDescriptions).first else { return "不明" }
+        guard let description = try await track.load(.formatDescriptions).first else { return L("不明") }
         let sub = CMFormatDescriptionGetMediaSubType(description)
         let chars = [24, 16, 8, 0].map { Character(UnicodeScalar(UInt8((sub >> $0) & 0xff))) }
         return String(chars).trimmingCharacters(in: .whitespaces)

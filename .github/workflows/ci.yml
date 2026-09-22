@@ -32,9 +32,14 @@ jobs:
           sudo xcode-select -s "$latest"
           xcodebuild -version
 
+      # L() でくるんだ文言は Xcode の抽出に載らないので、機械で見張る。
+      # Scripts/test.sh からも走るが、落ちた理由がすぐ分かるよう単体でも出す。
+      - name: 文言カタログの検査
+        run: Scripts/check-localization.py
+
       # 手元で毎回走るのと同じ経路。速い層だけが緑になることも見張る。
       - name: テスト（速い層だけ・手元と同じ経路）
-        run: Scripts/test.sh
+        run: Scripts/test.sh --skip-l10n
 
       - name: テスト（重い層も含めて全部）
         run: |

@@ -43,11 +43,11 @@ enum PropType: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .string: return "テキスト"
-        case .number: return "数値"
-        case .color: return "色"
-        case .point: return "座標"
-        case .bool: return "ON/OFF"
+        case .string: return L("テキスト")
+        case .number: return L("数値")
+        case .color: return L("色")
+        case .point: return L("座標")
+        case .bool: return L("ON/OFF")
         }
     }
 
@@ -67,6 +67,8 @@ struct PropDef: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     /// インスタンス側の props 辞書のキー。テンプレート内で一意。
     var key: String
+    /// 表示名。同梱テンプレートのものは原語（日本語）で入っていて、出すときに
+    /// `LName` で訳す。ユーザーが付けた名前はカタログに無いのでそのまま出る。
     var label: String
     var type: PropType
     var defaultValue: PropValue
@@ -100,15 +102,15 @@ enum Anchor: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .topLeft: return "左上"
-        case .top: return "上"
-        case .topRight: return "右上"
-        case .left: return "左"
-        case .center: return "中央"
-        case .right: return "右"
-        case .bottomLeft: return "左下"
-        case .bottom: return "下"
-        case .bottomRight: return "右下"
+        case .topLeft: return L("左上")
+        case .top: return L("上")
+        case .topRight: return L("右上")
+        case .left: return L("左")
+        case .center: return L("中央")
+        case .right: return L("右")
+        case .bottomLeft: return L("左下")
+        case .bottom: return L("下")
+        case .bottomRight: return L("右下")
         }
     }
 
@@ -157,9 +159,9 @@ enum TextAlign: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .left: return "左"
-        case .center: return "中央"
-        case .right: return "右"
+        case .left: return L("左")
+        case .center: return L("中央")
+        case .right: return L("右")
         }
     }
 }
@@ -175,7 +177,7 @@ struct FontSpec: Codable, Hashable {
 }
 
 struct TextNodeSpec: Codable, Hashable {
-    var text: ValueRef = .literal(.string("テキスト"))
+    var text: ValueRef = .literal(.string(L("ここにテキスト")))
     var color: ValueRef = .literal(.color(.white))
     var font: FontSpec = FontSpec()
     var align: TextAlign = .center
@@ -206,6 +208,7 @@ enum NodeKind: Codable, Hashable {
 
 struct TemplateNode: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
+    /// レイヤー名。`PropDef.label` と同じく原語で持ち、表示のときに訳す。
     var name: String = "ノード"
     var frame: RelFrame = RelFrame()
     var opacity: Double = 1
@@ -217,6 +220,7 @@ struct TemplateNode: Identifiable, Codable, Hashable {
 
 struct TextTemplate: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
+    /// テンプレート名。`PropDef.label` と同じく原語で持ち、表示のときに訳す。
     var name: String
     /// 背面から前面の順。
     var nodes: [TemplateNode]

@@ -49,12 +49,14 @@ struct MediaValidationTests {
         do {
             _ = try await AssetCache.shared.inspect(url: url)
         } catch let problem as MediaProblem {
-            guard case .undecodable(_, let codec) = problem else {
+            guard case .undecodable(let name, let codec) = problem else {
                 Issue.record("undecodable のはずが \(problem)")
                 return
             }
             #expect(codec == "FFV1", "コーデック名が \(codec)")
-            #expect(problem.localizedDescription.contains("再生できない形式"))
+            // 文面は訳されるので、訳に左右されないところだけ見る。
+            #expect(problem.localizedDescription.contains(name))
+            #expect(problem.localizedDescription.contains(codec))
         }
     }
 
@@ -68,11 +70,11 @@ struct MediaValidationTests {
             _ = try await AssetCache.shared.inspect(url: url)
             Issue.record("切れたファイルを取り込んでしまった")
         } catch let problem as MediaProblem {
-            guard case .truncated = problem else {
+            guard case .truncated(let name) = problem else {
                 Issue.record("truncated のはずが \(problem)")
                 return
             }
-            #expect(problem.localizedDescription.contains("最後まで読めません"))
+            #expect(problem.localizedDescription.contains(name))
         }
     }
 
