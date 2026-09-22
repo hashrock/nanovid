@@ -104,6 +104,11 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
             }
             return image.transformed(by: fitTransform(for: image.extent.size, in: canvas, layer: layer))
 
+        case .still(let cgImage):
+            let image = CIImage(cgImage: cgImage)
+            return image.transformed(
+                by: fitTransform(for: image.extent.size, in: canvas, layer: layer))
+
         case .text(let cgImage, let rect):
             // 配置の計算は OverlayLayout と共有する。プレビューのハンドルが
             // 実際に映るものとずれないようにするため。

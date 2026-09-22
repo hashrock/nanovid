@@ -89,9 +89,8 @@ enum CompositionBuilder {
                     if asset.kind == .image {
                         guard track.kind == .video, !track.isHidden else { continue }
                         guard let cg = loadImage(url) else { throw BuildError.unreadable(asset.displayName) }
-                        let rect = aspectFitRect(CGSize(width: cg.width, height: cg.height), in: canvasSize)
                         pending.append(PendingLayer(
-                            source: .text(image: cg, rect: rect),
+                            source: .still(image: cg),
                             start: clip.start, duration: clip.duration,
                             transform: clip.transform, opacity: clip.opacity, fade: clip.fade, z: z
                         ))
@@ -245,13 +244,5 @@ enum CompositionBuilder {
     private static func loadImage(_ url: URL) -> CGImage? {
         guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
-    }
-
-    /// キャンバス座標（左上原点）での、アスペクト比を保った収まり矩形。
-    private static func aspectFitRect(_ size: CGSize, in canvas: CGSize) -> CGRect {
-        guard size.width > 0, size.height > 0 else { return CGRect(origin: .zero, size: canvas) }
-        let s = min(canvas.width / size.width, canvas.height / size.height)
-        let w = size.width * s, h = size.height * s
-        return CGRect(x: (canvas.width - w) / 2, y: (canvas.height - h) / 2, width: w, height: h)
     }
 }

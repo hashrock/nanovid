@@ -10,6 +10,8 @@ struct RenderLayer {
         case media(trackID: CMPersistentTrackID, preferredTransform: CGAffineTransform)
         /// 事前にラスタライズ済みのテキスト。rect はキャンバス座標（左上原点）。
         case text(image: CGImage, rect: CGRect)
+        /// 静止画。映像と同じく「キャンバスに収める」基準で置く。
+        case still(image: CGImage)
     }
 
     var source: Source
