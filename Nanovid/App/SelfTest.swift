@@ -149,7 +149,15 @@ enum SelfTest {
                     print("  素材 \(exists ? "○" : "×") \(asset.kind.label) \(asset.displayName)")
                 }
 
+                // 編集のたびにこれを組み直すので、どれだけかかるかは体感に直結する。
+                let started = Date()
                 let built = try await CompositionBuilder.build(project: project, baseURL: base)
+                let cold = Date().timeIntervalSince(started) * 1000
+                // 2 回目は文字のラスタライズが temp に残っている状態。編集中はこちらの速さになる。
+                let again = Date()
+                _ = try await CompositionBuilder.build(project: project, baseURL: base)
+                let warm = Date().timeIntervalSince(again) * 1000
+                print(String(format: "組み立て: 初回 %.0f ms / 2 回目 %.0f ms", cold, warm))
                 let videoTracks = built.composition.tracks(withMediaType: .video)
                 let audioTracks = built.composition.tracks(withMediaType: .audio)
                 print("合成: 映像トラック \(videoTracks.count) / 音声トラック \(audioTracks.count)")
@@ -187,13 +195,34 @@ enum SelfTest {
                 generator.requestedTimeToleranceAfter = .zero
                 generator.appliesPreferredTrackTransform = false
                 do {
+                    let firstStarted = Date()
                     let (image, actual) = try await generator.image(at: at.cmTime)
+                    let first = Date().timeIntervalSince(firstStarted) * 1000
+                    // 2 枚目はデコーダが起きている状態。スクラブ中の 1 コマはこちらに近い。
+                    let nextStarted = Date()
+                    _ = try await generator.image(at: (at + project.canvas.frameDuration).cmTime)
+                    let next = Date().timeIntervalSince(nextStarted) * 1000
                     let out = FileManager.default.temporaryDirectory
                         .appendingPathComponent("nanovid-inspect.png")
                     try NSBitmapImageRep(cgImage: image)
                         .representation(using: .png, properties: [:])!.write(to: out)
                     print("描画: 成功 \(image.width)x\(image.height) (実時刻 \(String(format: "%.2f", actual.secondsOrZero)) 秒)")
+                    print(String(format: "  再生経路で 1 コマ: 初回 %.0f ms / 次のコマ %.0f ms", first, next))
                     print("  \(out.path)")
+
+                    // 合成だけを直に呼んだときの速さ。素材のフレームは渡さないので、
+                    // 映像レイヤーは飛ばされ、文字と背景の合成ぶんだけが出る。
+                    if let instruction = built.videoComposition.instructions.first(where: {
+                        $0.timeRange.start <= at.cmTime && at.cmTime < $0.timeRange.end
+                    }) as? NanovidInstruction {
+                        let compositor = NanovidCompositor()
+                        _ = compositor.render(instruction: instruction, at: at)   // 温める
+                        let composeStarted = Date()
+                        for _ in 0..<10 { _ = compositor.render(instruction: instruction, at: at) }
+                        let perFrame = Date().timeIntervalSince(composeStarted) * 100
+                        let textLayers = instruction.layers.filter { $0.trackID == nil }.count
+                        print(String(format: "  合成だけ（文字 %d 枚＋背景）: 1 コマ %.1f ms", textLayers, perFrame))
+                    }
                 } catch {
                     print("描画: 失敗 \(error.localizedDescription)")
                 }
@@ -253,7 +282,7 @@ enum SelfTest {
         p1.tracks[1].clips = [titleClip]
 
         let textOnly = dir.appendingPathComponent("01-text-only.mp4")
-        try await Exporter().export(project: p1, baseURL: nil, to: textOnly,
+        try await timedExport(project: p1, to: textOnly,
                                     settings: ExportSettings()) { _ in }
         try report(textOnly, expectDuration: 3, expectSize: p1.canvas.size)
 
@@ -289,7 +318,7 @@ enum SelfTest {
         p2.tracks[2].clips = [aClip]
 
         let composed = dir.appendingPathComponent("02-composed.mp4")
-        try await Exporter().export(project: p2, baseURL: nil, to: composed,
+        try await timedExport(project: p2, to: composed,
                                     settings: ExportSettings(codec: .h264, quality: .high)) { _ in }
         try report(composed, expectDuration: 2.5, expectSize: p2.canvas.size)
 
@@ -315,7 +344,7 @@ enum SelfTest {
         ]
 
         let gapped = dir.appendingPathComponent("03-gap-overlap.mp4")
-        try await Exporter().export(project: p3, baseURL: nil, to: gapped,
+        try await timedExport(project: p3, to: gapped,
                                     settings: ExportSettings()) { _ in }
         try report(gapped, expectDuration: 3.0, expectSize: p3.canvas.size)
 
@@ -341,7 +370,7 @@ enum SelfTest {
         }
 
         let whole = dir.appendingPathComponent("04-range-whole.mp4")
-        try await Exporter().export(project: p4, baseURL: nil, to: whole,
+        try await timedExport(project: p4, to: whole,
                                     settings: ExportSettings()) { _ in }
         try report(whole, expectDuration: 3.0, expectSize: p4.canvas.size)
 
@@ -350,7 +379,7 @@ enum SelfTest {
         var p4r = p4
         p4r.outputRange = OutputRange(start: 2.2, end: 3.0)
         let ranged = dir.appendingPathComponent("04-range-cut.mp4")
-        try await Exporter().export(project: p4r, baseURL: nil, to: ranged,
+        try await timedExport(project: p4r, to: ranged,
                                     settings: ExportSettings()) { _ in }
         try report(ranged, expectDuration: 0.8, expectSize: p4.canvas.size)
 
@@ -439,6 +468,18 @@ enum SelfTest {
         return Double(total) / Double(count)
     }
 
+    /// 書き出しにかかった時間。report で「何倍速か」を出すために覚えておく。
+    nonisolated(unsafe) private static var exportSeconds: [URL: Double] = [:]
+
+    private static func timedExport(project: Project, to url: URL,
+                                    settings: ExportSettings,
+                                    progress: @escaping @Sendable (Double) -> Void) async throws {
+        let started = Date()
+        try await Exporter().export(project: project, baseURL: nil, to: url,
+                                    settings: settings, progress: progress)
+        exportSeconds[url] = Date().timeIntervalSince(started)
+    }
+
     private static func report(_ url: URL, expectDuration: Double, expectSize: CGSize) throws {
         let asset = AVURLAsset(url: url)
         let sem = DispatchSemaphore(value: 0)
@@ -451,9 +492,11 @@ enum SelfTest {
                 let at = try await asset.loadTracks(withMediaType: .audio).first
                 let size = try await vt?.load(.naturalSize) ?? .zero
                 let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
-                line = String(format: "  %@  %.2fs  %.0fx%.0f  audio=%@  %d KB",
+                let took = exportSeconds[url] ?? 0
+                let speed = took > 0 ? d / took : 0
+                line = String(format: "  %@  %.2fs  %.0fx%.0f  audio=%@  %d KB  (%.1f 秒, %.1f 倍速)",
                               url.lastPathComponent, d, size.width, size.height,
-                              at == nil ? "no" : "yes", (bytes ?? 0) / 1024)
+                              at == nil ? "no" : "yes", bytes / 1024, took, speed)
                 if abs(d - expectDuration) > 0.2 { err = Fail("duration \(d) != \(expectDuration)") }
                 if size != expectSize { err = Fail("size \(size) != \(expectSize)") }
             } catch { err = error }
