@@ -50,7 +50,9 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
                 return
             }
             let time = request.compositionTime.secondsOrZero
-            let image = self.compose(instruction: instruction, request: request, at: time)
+            let image = self.compose(instruction: instruction, at: time) {
+                request.sourceFrame(byTrackID: $0)
+            }
             self.ciContext.render(image, to: destination,
                                   bounds: CGRect(origin: .zero, size: instruction.canvasSize),
                                   colorSpace: CGColorSpace(name: CGColorSpace.sRGB)!)
@@ -60,9 +62,13 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
 
     // MARK: - 合成
 
-    private func compose(instruction: NanovidInstruction,
-                         request: AVAsynchronousVideoCompositionRequest,
-                         at time: Double) -> CIImage {
+    /// 1 フレームぶんの絵を組む。
+    ///
+    /// AVFoundation のリクエストではなく、素材のフレームを返す関数を受け取る。
+    /// 再生・書き出しの経路を通さずに、同じ合成をそのまま試せるようにするため。
+    /// - Parameter sourceFrame: 合成トラックの ID から、その時刻の素材フレームを返す。
+    func compose(instruction: NanovidInstruction, at time: Double,
+                 sourceFrame: (CMPersistentTrackID) -> CVPixelBuffer?) -> CIImage {
         let canvas = instruction.canvasSize
         let canvasRect = CGRect(origin: .zero, size: canvas)
         let bg = instruction.backgroundColor
@@ -72,7 +78,8 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
         for layer in instruction.layers {
             let alpha = layer.alpha(at: time)
             guard alpha > 0.001 else { continue }
-            guard var image = sourceImage(for: layer, request: request, canvas: canvas) else { continue }
+            guard var image = sourceImage(for: layer, canvas: canvas, sourceFrame: sourceFrame)
+            else { continue }
             if alpha < 0.999 {
                 image = image.applyingFilter("CIColorMatrix", parameters: [
                     "inputAVector": CIVector(x: 0, y: 0, z: 0, w: alpha)
@@ -83,12 +90,11 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
         return result.cropped(to: canvasRect)
     }
 
-    private func sourceImage(for layer: RenderLayer,
-                             request: AVAsynchronousVideoCompositionRequest,
-                             canvas: CGSize) -> CIImage? {
+    private func sourceImage(for layer: RenderLayer, canvas: CGSize,
+                             sourceFrame: (CMPersistentTrackID) -> CVPixelBuffer?) -> CIImage? {
         switch layer.source {
         case .media(let trackID, let preferred):
-            guard let buffer = request.sourceFrame(byTrackID: trackID) else { return nil }
+            guard let buffer = sourceFrame(trackID) else { return nil }
             var image = CIImage(cvPixelBuffer: buffer)
             if !preferred.isIdentity {
                 image = image.transformed(by: preferred)
@@ -122,6 +128,13 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
             .rotated(by: layer.transform.rotation)
             .scaledBy(x: scale, y: scale)
             .translatedBy(x: -size.width / 2, y: -size.height / 2)
+    }
+
+    /// 組んだ絵を画像にして返す。検査とテストから使う。
+    func render(instruction: NanovidInstruction, at time: Double,
+                sourceFrame: (CMPersistentTrackID) -> CVPixelBuffer? = { _ in nil }) -> CGImage? {
+        let image = compose(instruction: instruction, at: time, sourceFrame: sourceFrame)
+        return ciContext.createCGImage(image, from: CGRect(origin: .zero, size: instruction.canvasSize))
     }
 
     enum CompositorError: Error {
