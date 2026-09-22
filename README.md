@@ -10,7 +10,7 @@ Mac ネイティブの軽量な動画編集ツール。
 
 ## ダウンロード
 
-**[Nanovid 0.1.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.1.0/Nanovid-0.1.0.zip)**
+**[Nanovid 0.2.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.2.0/Nanovid-0.2.0.zip)**
 （[リリース一覧](https://github.com/hashrock/nanovid/releases/latest)）
 
 zip を展開して `Nanovid.app` をアプリケーションフォルダへ。
