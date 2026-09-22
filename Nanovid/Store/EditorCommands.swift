@@ -17,11 +17,14 @@ extension EditorStore {
                 made.append(existing)
                 continue
             }
-            guard let asset = try? await AssetCache.shared.inspect(url: url) else {
+            do {
+                made.append(try await AssetCache.shared.inspect(url: url))
+            } catch let problem as MediaProblem {
+                // 再生できない形式や、途中で切れたファイル。理由をそのまま出す。
+                buildError = problem.localizedDescription
+            } catch {
                 buildError = "読み込めませんでした: \(url.lastPathComponent)"
-                continue
             }
-            made.append(asset)
         }
         guard !made.isEmpty else { return [] }
         let fresh = made.filter { a in !project.assets.contains { $0.id == a.id } }

@@ -43,6 +43,8 @@ final class EditorStore {
 
     @ObservationIgnored let player = AVPlayer()
     @ObservationIgnored private var timeObserver: Any?
+    @ObservationIgnored private var itemStatusObservation: NSKeyValueObservation?
+    @ObservationIgnored private var playbackFailureObserver: NSObjectProtocol?
     @ObservationIgnored private var rebuildTask: Task<Void, Never>?
     @ObservationIgnored private var lastCoalesceKey: String?
     @ObservationIgnored private var lastCoalesceAt: Date = .distantPast
@@ -84,6 +86,8 @@ final class EditorStore {
 
     deinit {
         if let timeObserver { player.removeTimeObserver(timeObserver) }
+        itemStatusObservation?.invalidate()
+        if let playbackFailureObserver { NotificationCenter.default.removeObserver(playbackFailureObserver) }
     }
 
     private func installTimeObserver() {
@@ -174,6 +178,7 @@ final class EditorStore {
 
             let resume = isPlaying
             player.replaceCurrentItem(with: item)
+            watchForPlaybackFailure(of: item)
             await player.seek(to: min(currentTime, built.duration).cmTime,
                               toleranceBefore: .zero, toleranceAfter: .zero)
             if resume { player.play() }
@@ -184,10 +189,54 @@ final class EditorStore {
             guard generation == buildGeneration else { return }
             if case BuildError.emptyProject = error {
                 player.replaceCurrentItem(with: nil)
+                stopWatchingPlaybackFailure()
                 buildError = nil
             } else {
                 buildError = error.localizedDescription
             }
+        }
+    }
+
+    // MARK: 再生の失敗
+
+    /// 組み上がったあとで転ける経路を見張る。
+    ///
+    /// 組む時点で確かめられるのはファイルの存在まで。そのあとで素材を動かされたり、
+    /// デコーダが対応していなかったりすると、AVPlayer は何も言わずに止まる。
+    /// ここで拾って、組み立ての失敗と同じ場所（buildError）に出す。
+    private func watchForPlaybackFailure(of item: AVPlayerItem) {
+        stopWatchingPlaybackFailure()
+
+        // 読み込みの失敗。status が .failed になるのは item ごとに一度きり。
+        itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let message = item.error?.localizedDescription ?? "不明なエラー"
+            Task { @MainActor [weak self] in
+                guard let self, self.player.currentItem === item else { return }
+                self.isPlaying = false
+                self.buildError = "プレビューを再生できません: \(message)"
+            }
+        }
+
+        // 途中まで再生できたあとの失敗。壊れた区間に差しかかったときなど。
+        playbackFailureObserver = NotificationCenter.default.addObserver(
+            forName: AVPlayerItem.failedToPlayToEndTimeNotification, object: item, queue: .main
+        ) { [weak self] note in
+            let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.isPlaying = false
+                self.buildError = "再生の途中で止まりました: \(error?.localizedDescription ?? "不明なエラー")"
+            }
+        }
+    }
+
+    private func stopWatchingPlaybackFailure() {
+        itemStatusObservation?.invalidate()
+        itemStatusObservation = nil
+        if let playbackFailureObserver {
+            NotificationCenter.default.removeObserver(playbackFailureObserver)
+            self.playbackFailureObserver = nil
         }
     }
 

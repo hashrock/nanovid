@@ -14,12 +14,15 @@ enum BuildError: LocalizedError {
     case emptyProject
     case assetMissing(String)
     case unreadable(String)
+    /// この Mac にデコーダが無い。別の Mac で作ったプロジェクトを開くと起きうる。
+    case undecodable(String)
 
     var errorDescription: String? {
         switch self {
         case .emptyProject: return "タイムラインに何も置かれていません。"
         case .assetMissing(let name): return "素材が見つかりません: \(name)"
         case .unreadable(let name): return "素材を読み込めません: \(name)"
+        case .undecodable(let name): return "「\(name)」はこの Mac で再生できない形式です。"
         }
     }
 }
@@ -105,6 +108,11 @@ enum CompositionBuilder {
                        let vTrack = try await av.loadTracks(withMediaType: .video).first,
                        let compTrack = claimTrack(in: &videoPool, mediaType: .video,
                                                   composition: composition, clip: clip) {
+                        // 取り込み時にも見ているが、プロジェクトは別の Mac から来ることがある。
+                        // AVPlayer は黙って黒を流すので、ここで言わないと誰も言わない。
+                        guard try await vTrack.load(.isDecodable) else {
+                            throw BuildError.undecodable(asset.displayName)
+                        }
                         try compTrack.insertTimeRange(sourceRange, of: vTrack, at: clip.start.cmTime)
                         let preferred = try await vTrack.load(.preferredTransform)
                         pending.append(PendingLayer(
