@@ -1,8 +1,23 @@
+import AppKit
 import SwiftUI
 
 @main
 struct NanovidApp: App {
+
+    /// ユニットテストの中で動いているか。
+    ///
+    /// テストの置き場はアプリ本体（TEST_HOST）なので、走らせるとアプリごと
+    /// 立ち上がる。窓が出てきて前面を奪うと、作業の邪魔になるうえに
+    /// キー入力やフォーカスの取り合いでテスト自体も不安定になる。
+    static let isRunningTests =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        || ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
+
     init() {
+        if Self.isRunningTests {
+            // Dock にもメニューバーにも出さない。窓も開かない。
+            NSApplication.shared.setActivationPolicy(.prohibited)
+        }
         _ = SelfTest.runIfRequested()
         _ = SelfTest.writeDemoIfRequested()
         _ = SelfTest.transcribeIfRequested()
@@ -26,6 +41,8 @@ struct NanovidApp: App {
                 .frame(minWidth: 1100, minHeight: 700)
                 .onAppear(perform: openProjectFromArguments)
         }
+        // テスト中は最初の窓を開かせない。
+        .defaultLaunchBehavior(Self.isRunningTests ? .suppressed : .presented)
         .windowToolbarStyle(.unified)
         .commands {
             CommandGroup(replacing: .newItem) {

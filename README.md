@@ -41,6 +41,10 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
 ```
 
+テストの置き場はアプリ本体（`TEST_HOST`）なので、走らせるとアプリごと立ち上がる。
+窓が前面に出ると作業の邪魔になるうえ、フォーカスの取り合いでテスト自体も不安定に
+なるため、テスト中は窓を開かず Dock にも出さない（`NanovidApp.isRunningTests`）。
+
 目盛りの刻み幅・座標変換の往復・ドラッグの吸着と冪等性・ズーム時のスクロール位置・
 分割／トリム・フェード計算・テンプレートの props 解決・プロジェクトの保存読込・
 合成命令の連続性などを検証している。
