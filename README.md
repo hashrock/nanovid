@@ -21,6 +21,8 @@ Developer ID 署名と公証済みなので、初回起動の警告は出ない�
 | 動作環境 | macOS 15 以降 |
 | 字幕の自動生成 | macOS 26 以降（`SpeechAnalyzer` を使うため）|
 
+AVFoundation まわりで踏んだ問題と、調べて分かったことは [issues.md](issues.md) にある。
+
 ## ビルドと実行
 
 ```sh
