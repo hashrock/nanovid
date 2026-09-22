@@ -47,7 +47,7 @@ enum PropType: String, Codable, Hashable, CaseIterable {
         case .number: return L("数値")
         case .color: return L("色")
         case .point: return L("座標")
-        case .bool: return "ON/OFF"
+        case .bool: return L("ON/OFF")
         }
     }
 
@@ -67,6 +67,8 @@ struct PropDef: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
     /// インスタンス側の props 辞書のキー。テンプレート内で一意。
     var key: String
+    /// 表示名。同梱テンプレートのものは原語（日本語）で入っていて、出すときに
+    /// `LName` で訳す。ユーザーが付けた名前はカタログに無いのでそのまま出る。
     var label: String
     var type: PropType
     var defaultValue: PropValue
@@ -175,7 +177,7 @@ struct FontSpec: Codable, Hashable {
 }
 
 struct TextNodeSpec: Codable, Hashable {
-    var text: ValueRef = .literal(.string(L("テキスト")))
+    var text: ValueRef = .literal(.string(L("ここにテキスト")))
     var color: ValueRef = .literal(.color(.white))
     var font: FontSpec = FontSpec()
     var align: TextAlign = .center
@@ -206,7 +208,8 @@ enum NodeKind: Codable, Hashable {
 
 struct TemplateNode: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
-    var name: String = L("ノード")
+    /// レイヤー名。`PropDef.label` と同じく原語で持ち、表示のときに訳す。
+    var name: String = "ノード"
     var frame: RelFrame = RelFrame()
     var opacity: Double = 1
     var isHidden: Bool = false
@@ -217,6 +220,7 @@ struct TemplateNode: Identifiable, Codable, Hashable {
 
 struct TextTemplate: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
+    /// テンプレート名。`PropDef.label` と同じく原語で持ち、表示のときに訳す。
     var name: String
     /// 背面から前面の順。
     var nodes: [TemplateNode]

@@ -126,10 +126,10 @@ struct LibraryView: View {
             HStack {
                 Button {
                     let new = TextTemplate(
-                        name: L("新しいテンプレート"),
-                        nodes: [TemplateNode(name: L("本文"), kind: .text(TextNodeSpec(text: .prop("text"))))],
-                        props: [PropDef(key: "text", label: L("テキスト"), type: .string,
-                                        defaultValue: .string(L("テキスト")))]
+                        name: "新しいテンプレート",
+                        nodes: [TemplateNode(name: "本文", kind: .text(TextNodeSpec(text: .prop("text"))))],
+                        props: [PropDef(key: "text", label: "テキスト", type: .string,
+                                        defaultValue: .string(L("ここにテキスト")))]
                     )
                     store.upsertTemplate(new)
                     editingTemplateID = new.id
@@ -199,7 +199,7 @@ private struct TemplateRow: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
-                Text(template.name).font(.caption).lineLimit(1)
+                Text(LName(template.name)).font(.caption).lineLimit(1)
                 Text("\(template.props.count) props · 使用 \(usageCount)")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

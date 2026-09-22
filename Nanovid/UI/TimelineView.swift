@@ -351,7 +351,7 @@ struct TimelineView: View {
         if track.kind == .video {
             Menu("テキスト") {
                 ForEach(store.project.textTemplates) { template in
-                    Button(template.name) {
+                    Button(LName(template.name)) {
                         store.addTextClip(templateID: template.id, trackID: track.id, at: time)
                     }
                 }
@@ -1387,11 +1387,11 @@ private struct ClipView: View {
                         return s
                     }
                 }
-                return template.name
+                return LName(template.name)
             }
             return L("テキスト")
         }
-        if !clip.name.isEmpty { return clip.name }
+        if !clip.name.isEmpty { return LName(clip.name) }
         if let id = clip.content.assetID { return store.project.asset(id)?.displayName ?? L("クリップ") }
         return L("クリップ")
     }

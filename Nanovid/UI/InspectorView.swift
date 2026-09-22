@@ -123,6 +123,9 @@ struct InspectorView: View {
     @ViewBuilder
     private func clipSection(_ clips: [Clip]) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            // 1 個のときは数を出さない。日本語には CLDR の単数形が無いので、
+            // これはカタログの複数形では書けず、ここで分ける（英語側は
+            // %lld 個のクリップ に one/other を持たせてある）。
             SectionHeader(clips.count == 1 ? "クリップ" : "\(clips.count) 個のクリップ")
 
             timingBlock(clips)
@@ -228,7 +231,7 @@ struct InspectorView: View {
     private func textPropsBlock(template: TextTemplate, clips: [Clip]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("テキスト（\(template.name)）").font(.caption).foregroundStyle(.secondary)
+                Text("テキスト（\(LName(template.name))）").font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 if clips.count > 1 {
                     Text("\(clips.count) 件に適用")
@@ -250,7 +253,7 @@ struct InspectorView: View {
             if store.project.textTemplates.count > 1 {
                 Menu("テンプレートを変更") {
                     ForEach(store.project.textTemplates) { t in
-                        Button(t.name) { store.retemplate(clipIDs: store.selectedClipIDs, to: t.id) }
+                        Button(LName(t.name)) { store.retemplate(clipIDs: store.selectedClipIDs, to: t.id) }
                     }
                 }
                 .fixedSize()
@@ -338,7 +341,7 @@ struct PropEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 4) {
-                Text(def.label).font(.caption)
+                Text(LName(def.label)).font(.caption)
                 if isOverridden {
                     Button(action: onReset) {
                         Image(systemName: "arrow.uturn.backward.circle")

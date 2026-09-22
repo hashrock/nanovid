@@ -60,7 +60,7 @@ struct TextClipsPane: View {
             Picker("", selection: $templateFilter) {
                 Text("すべて").tag(UUID?.none)
                 ForEach(store.project.textTemplates) { t in
-                    Text(t.name).tag(UUID?.some(t.id))
+                    Text(LName(t.name)).tag(UUID?.some(t.id))
                 }
             }
             .labelsHidden()
@@ -68,7 +68,7 @@ struct TextClipsPane: View {
 
             Menu {
                 ForEach(store.project.textTemplates) { template in
-                    Button(template.name) { add(template) }
+                    Button(LName(template.name)) { add(template) }
                 }
             } label: {
                 Label("追加", systemImage: "plus")
@@ -126,7 +126,7 @@ struct TextClipsPane: View {
                 Divider()
                 Section("このテンプレートで作る") {
                     ForEach(store.project.textTemplates) { template in
-                        Button(template.name) { generate(with: template) }
+                        Button(LName(template.name)) { generate(with: template) }
                     }
                 }
             } label: {
@@ -155,12 +155,12 @@ struct TextClipsPane: View {
 
             ForEach(otherProps) { def in
                 if def.type == .color {
-                    ColorPicker(def.label, selection: Binding(
+                    ColorPicker(LName(def.label), selection: Binding(
                         get: { Color(commonColor(def) ?? .white) },
                         set: { store.setTextProp(def.key, to: .color(RGBAColor($0)), clipIDs: checked) }
                     ), supportsOpacity: true)
                     .labelsHidden()
-                    .help(def.label)
+                    .help(LName(def.label))
                 }
             }
 
@@ -231,7 +231,7 @@ struct TextClipsPane: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 ForEach(stringProps) { def in
-                    Text(def.label).frame(maxWidth: .infinity, alignment: .leading)
+                    Text(LName(def.label)).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             Text("尺 (秒)").frame(width: 50, alignment: .trailing)
@@ -317,7 +317,7 @@ struct TextClipsPane: View {
             .filter { $0.type == .string }
             .compactMap { inst.value($0.key, in: template)?.stringValue }
             .filter { !$0.isEmpty }
-        return parts.isEmpty ? template.name : parts.joined(separator: " / ")
+        return parts.isEmpty ? LName(template.name) : parts.joined(separator: " / ")
     }
 
     // MARK: - 操作

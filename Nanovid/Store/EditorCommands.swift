@@ -518,7 +518,7 @@ extension EditorStore {
     func duplicateTemplate(_ id: UUID) {
         guard var t = project.template(id) else { return }
         t.id = UUID()
-        t.name += L(" のコピー")
+        t.name = LName(t.name) + L(" のコピー")
         t.nodes = t.nodes.map { var n = $0; n.id = UUID(); return n }
         edit { $0.textTemplates.append(t) }
     }

@@ -76,7 +76,7 @@ struct TemplateEditorView: View {
     private func header(_ template: TextTemplate) -> some View {
         HStack(spacing: 10) {
             Image(systemName: "textformat").foregroundStyle(.secondary)
-            TextField("テンプレート名", text: binding(\.name, fallback: template.name))
+            TextField("テンプレート名", text: binding(\.name, fallback: template.name).localizedName())
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 220)
             Spacer()
@@ -98,7 +98,7 @@ struct TemplateEditorView: View {
                             Image(systemName: node.isHidden ? "eye.slash" : iconFor(node))
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            Text(node.name).font(.caption)
+                            Text(LName(node.name)).font(.caption)
                             Spacer()
                         }
                         .tag(node.id)
@@ -182,7 +182,7 @@ struct TemplateEditorView: View {
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.caption, design: .monospaced))
                 .frame(minWidth: 70, idealWidth: 96, maxWidth: 140)
-            TextField("表示名", text: bindingProp(def.id, \.label))
+            TextField("表示名", text: bindingProp(def.id, \.label).localizedName())
                 .textFieldStyle(.roundedBorder)
                 .font(.caption)
                 .frame(minWidth: 80, idealWidth: 120, maxWidth: 180)
@@ -297,7 +297,7 @@ struct TemplateEditorView: View {
             Button("複製して新規に") {
                 guard var copy = draft else { return }
                 copy.id = UUID()
-                copy.name += L(" のコピー")
+                copy.name = LName(copy.name) + L(" のコピー")
                 copy.nodes = copy.nodes.map { var n = $0; n.id = UUID(); return n }
                 store.upsertTemplate(copy)
                 dismiss()
@@ -392,7 +392,7 @@ private struct NodeInspector: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            TextField("レイヤー名", text: $node.name)
+            TextField("レイヤー名", text: $node.name.localizedName())
                 .textFieldStyle(.roundedBorder)
 
             Toggle("非表示", isOn: $node.isHidden)
@@ -543,7 +543,7 @@ private struct NodeInspector: View {
             )) {
                 Text("しない").tag(UUID?.none)
                 ForEach(textNodes) { n in
-                    Text(n.name).tag(UUID?.some(n.id))
+                    Text(LName(n.name)).tag(UUID?.some(n.id))
                 }
             }
             .font(.caption)
