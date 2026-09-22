@@ -265,7 +265,7 @@ struct EditingPropertyTests {
         return []
     }
 
-    @Test("どんな操作列のあともプロジェクトは壊れない", arguments: 0..<300)
+    @Test("どんな操作列のあともプロジェクトは壊れない", arguments: PropertyRuns.seeds(300))
     func editingKeepsProjectValid(seed: Int) {
         let (commands, found) = run(seed: UInt64(seed))
         guard !found.isEmpty else { return }
@@ -279,7 +279,7 @@ struct EditingPropertyTests {
             """)
     }
 
-    @Test("編集したぶんだけ取り消せば元に戻る", arguments: 0..<200)
+    @Test("編集したぶんだけ取り消せば元に戻る", arguments: PropertyRuns.seeds(200))
     func undoingEveryEditRestoresTheStart(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xBEEF)
         // undo/redo 自体は混ぜない。積んだ数と戻す数を一致させて見る。
@@ -309,7 +309,7 @@ struct EditingPropertyTests {
     /// 「最後まで戻すと最初に戻る」だけでは、checkpoint を積み忘れた操作を見逃す。
     /// 積み忘れた変更は次の操作のスナップショットに巻き込まれるので、
     /// 全部戻せばやはり最初に着いてしまうため。
-    @Test("プロジェクトを変える操作は、取り消し 1 回ぶんだけ戻る", arguments: 0..<200)
+    @Test("プロジェクトを変える操作は、取り消し 1 回ぶんだけ戻る", arguments: PropertyRuns.seeds(200))
     func eachEditIsExactlyOneUndoStep(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xF00D)
         let commands = EditGen.commands(count: 30, using: &generator).filter {
@@ -335,7 +335,7 @@ struct EditingPropertyTests {
         }
     }
 
-    @Test("取り消してやり直すと同じ状態に戻る", arguments: 0..<200)
+    @Test("取り消してやり直すと同じ状態に戻る", arguments: PropertyRuns.seeds(200))
     func redoUndoesTheUndo(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xCAFE)
         let commands = EditGen.commands(count: 25, using: &generator).filter {
@@ -431,7 +431,7 @@ struct EditingGeneratorTests {
 @MainActor
 struct EditingDeterminismTests {
 
-    @Test("同じ操作列は何度流しても同じプロジェクトになる", arguments: 0..<40)
+    @Test("同じ操作列は何度流しても同じプロジェクトになる", arguments: PropertyRuns.seeds(40))
     func sequencesAreReproducible(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed))
         let commands = EditGen.commands(count: 40, using: &generator)

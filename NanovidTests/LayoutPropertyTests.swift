@@ -26,7 +26,7 @@ struct MediaLayoutPropertyTests {
                                    rotation: 0))
     }
 
-    @Test("矩形と transform は行き来しても変わらない", arguments: 0..<300)
+    @Test("矩形と transform は行き来しても変わらない", arguments: PropertyRuns.seeds(300))
     func rectAndTransformRoundTrip(seed: Int) {
         let s = setup(seed: seed)
         let rect = MediaLayout.rect(naturalSize: s.natural, transform: s.transform, canvas: s.canvas)
@@ -36,7 +36,7 @@ struct MediaLayoutPropertyTests {
         #expect(abs(back.position.y - s.transform.position.y) < 1e-9)
     }
 
-    @Test("置いた矩形は素材の縦横比を保つ", arguments: 0..<300)
+    @Test("置いた矩形は素材の縦横比を保つ", arguments: PropertyRuns.seeds(300))
     func placementKeepsTheAspectRatio(seed: Int) {
         let s = setup(seed: seed)
         let rect = MediaLayout.rect(naturalSize: s.natural, transform: s.transform, canvas: s.canvas)
@@ -45,7 +45,7 @@ struct MediaLayoutPropertyTests {
         #expect(abs(got / want - 1) < 1e-9, "比が \(want) から \(got) へずれた")
     }
 
-    @Test("倍率 1 ならキャンバスに収まり、どちらかの辺がぴったり", arguments: 0..<300)
+    @Test("倍率 1 ならキャンバスに収まり、どちらかの辺がぴったり", arguments: PropertyRuns.seeds(300))
     func scaleOneFitsTheCanvas(seed: Int) {
         var s = setup(seed: seed)
         s.transform = Transform2D(position: .zero, scale: 1, rotation: 0)
@@ -60,7 +60,7 @@ struct MediaLayoutPropertyTests {
         #expect(abs(rect.midY - s.canvas.height / 2) < 1e-6)
     }
 
-    @Test("隅を掴んで動かしても対角は動かない", arguments: 0..<300)
+    @Test("隅を掴んで動かしても対角は動かない", arguments: PropertyRuns.seeds(300))
     func resizingKeepsTheOppositeCorner(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x4C09)
         let rect = CGRect(x: g.double(in: -200...800), y: g.double(in: -200...800),
@@ -75,7 +75,7 @@ struct MediaLayoutPropertyTests {
                 "対角が \(anchor) から \(movedAnchor) へ動いた（\(corner)）")
     }
 
-    @Test("隅を掴んで動かしても縦横比は保たれる", arguments: 0..<300)
+    @Test("隅を掴んで動かしても縦横比は保たれる", arguments: PropertyRuns.seeds(300))
     func resizingKeepsTheAspectRatio(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x4C0A)
         let rect = CGRect(x: g.double(in: -200...800), y: g.double(in: -200...800),
@@ -89,7 +89,7 @@ struct MediaLayoutPropertyTests {
                 "比が崩れた \(rect) → \(resized)")
     }
 
-    @Test("縮めすぎても下限より小さくならない", arguments: 0..<300)
+    @Test("縮めすぎても下限より小さくならない", arguments: PropertyRuns.seeds(300))
     func resizingRespectsTheMinimum(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x4C0B)
         let rect = CGRect(x: 100, y: 100, width: g.double(in: 20...900), height: g.double(in: 20...900))
@@ -130,7 +130,7 @@ struct OverlayLayoutPropertyTests {
                                    rotation: 0))
     }
 
-    @Test("矩形と transform は行き来しても変わらない", arguments: 0..<300)
+    @Test("矩形と transform は行き来しても変わらない", arguments: PropertyRuns.seeds(300))
     func rectAndTransformRoundTrip(seed: Int) {
         let s = setup(seed: seed)
         let rect = OverlayLayout.rect(content: s.content, transform: s.transform, canvas: s.canvas)
@@ -141,7 +141,7 @@ struct OverlayLayoutPropertyTests {
     }
 
     /// これが崩れると、掴んだ枠と画面に出る字幕がずれる。
-    @Test("ハンドルの枠と、描画に使う変換が同じ場所を指す", arguments: 0..<300)
+    @Test("ハンドルの枠と、描画に使う変換が同じ場所を指す", arguments: PropertyRuns.seeds(300))
     func handleRectMatchesWhatIsDrawn(seed: Int) {
         let s = setup(seed: seed)
         let rect = OverlayLayout.rect(content: s.content, transform: s.transform, canvas: s.canvas)
@@ -158,7 +158,7 @@ struct OverlayLayoutPropertyTests {
         #expect(abs(drawn.height - rect.height) < 1e-6)
     }
 
-    @Test("倍率 1・位置ずれ無しなら、テンプレートの位置のまま", arguments: 0..<100)
+    @Test("倍率 1・位置ずれ無しなら、テンプレートの位置のまま", arguments: PropertyRuns.seeds(100))
     func identityKeepsTheTemplatePlacement(seed: Int) {
         let s = setup(seed: seed)
         let rect = OverlayLayout.rect(content: s.content,

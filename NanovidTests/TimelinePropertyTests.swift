@@ -15,7 +15,7 @@ struct TickSpecPropertyTests {
         }
     }
 
-    @Test("ラベルは重ならない間隔で出る", arguments: 0..<300)
+    @Test("ラベルは重ならない間隔で出る", arguments: PropertyRuns.seeds(300))
     func labelsHaveRoomToBreathe(seed: Int) {
         let pps = zoom(seed: seed)
         let spec = TickSpec.forRuler(pixelsPerSecond: pps)
@@ -25,7 +25,7 @@ struct TickSpecPropertyTests {
                 "\(pps)px/秒 でラベル間隔が \(spec.major * pps)pt しかない")
     }
 
-    @Test("刻みは等間隔", arguments: 0..<300)
+    @Test("刻みは等間隔", arguments: PropertyRuns.seeds(300))
     func ticksAreEvenlySpaced(seed: Int) {
         let spec = TickSpec.forRuler(pixelsPerSecond: zoom(seed: seed))
         var worst = 0.0
@@ -36,7 +36,7 @@ struct TickSpecPropertyTests {
         #expect(worst < 1e-9, "刻みが \(worst) 秒ぶれている（minor \(spec.minor)）")
     }
 
-    @Test("大目盛りは subdivisions ごとにちょうど来る", arguments: 0..<300)
+    @Test("大目盛りは subdivisions ごとにちょうど来る", arguments: PropertyRuns.seeds(300))
     func majorsLandOnTheGrid(seed: Int) {
         let spec = TickSpec.forRuler(pixelsPerSecond: zoom(seed: seed))
         for i in 0..<200 {
@@ -47,7 +47,7 @@ struct TickSpecPropertyTests {
         #expect(abs(spec.time(index: spec.subdivisions) - spec.major) < 1e-9)
     }
 
-    @Test("隣り合うラベルの文字列が重複しない", arguments: 0..<300)
+    @Test("隣り合うラベルの文字列が重複しない", arguments: PropertyRuns.seeds(300))
     func neighbouringLabelsDiffer(seed: Int) {
         let spec = TickSpec.forRuler(pixelsPerSecond: zoom(seed: seed))
         var previous: String?
@@ -78,7 +78,7 @@ struct TickSpecPropertyTests {
     /// 「ズームしたときにタイムラインが均等にならない」への備え。
     /// 2.5 秒のような半端な刻みを表に入れると、ラベルは 0:00 0:03 0:05 0:08 と
     /// 不揃いに見える。文字列が重複していなくても目盛りとしては壊れている。
-    @Test("ラベルの表す時刻が等間隔に並ぶ", arguments: 0..<300)
+    @Test("ラベルの表す時刻が等間隔に並ぶ", arguments: PropertyRuns.seeds(300))
     func labelsAreEvenlySpaced(seed: Int) {
         let spec = TickSpec.forRuler(pixelsPerSecond: zoom(seed: seed))
         var times: [Double] = []
@@ -97,14 +97,14 @@ struct TickSpecPropertyTests {
             """)
     }
 
-    @Test("刻み幅は用意した表の中から選ばれる", arguments: 0..<300)
+    @Test("刻み幅は用意した表の中から選ばれる", arguments: PropertyRuns.seeds(300))
     func specComesFromTheTable(seed: Int) {
         let spec = TickSpec.forRuler(pixelsPerSecond: zoom(seed: seed))
         #expect(TickSpec.table.contains { $0.major == spec.major && $0.subdivisions == spec.subdivisions },
                 "表に無い刻み \(spec)")
     }
 
-    @Test("小目盛りを描くのは詰まっていないときだけ", arguments: 0..<300)
+    @Test("小目盛りを描くのは詰まっていないときだけ", arguments: PropertyRuns.seeds(300))
     func minorTicksOnlyWhenTheyFit(seed: Int) {
         let pps = zoom(seed: seed)
         let spec = TickSpec.forRuler(pixelsPerSecond: pps)
@@ -120,7 +120,7 @@ struct TimelineMathPropertyTests {
         return (g.double(in: 8...600), g.double(in: 0...3600), g.double(in: 0...50000))
     }
 
-    @Test("時刻と内容座標は行き来しても変わらない", arguments: 0..<300)
+    @Test("時刻と内容座標は行き来しても変わらない", arguments: PropertyRuns.seeds(300))
     func contentCoordinatesRoundTrip(seed: Int) {
         let (pps, time, _) = values(seed: seed)
         let back = TimelineScroll.time(atContentX: TimelineScroll.contentX(forTime: time,
@@ -129,7 +129,7 @@ struct TimelineMathPropertyTests {
         #expect(abs(back - time) < 1e-9, "\(time) 秒が \(back) 秒になった")
     }
 
-    @Test("表示座標もスクロールを挟んで往復する", arguments: 0..<300)
+    @Test("表示座標もスクロールを挟んで往復する", arguments: PropertyRuns.seeds(300))
     func viewportCoordinatesRoundTrip(seed: Int) {
         let (pps, time, scrollX) = values(seed: seed)
         let x = TimelineScroll.viewportX(forTime: time, scrollX: scrollX, pixelsPerSecond: pps)
@@ -137,7 +137,7 @@ struct TimelineMathPropertyTests {
         #expect(abs(back - time) < 1e-9, "\(time) 秒が \(back) 秒になった")
     }
 
-    @Test("ズームしてもカーソルの下の時刻が動かない", arguments: 0..<300)
+    @Test("ズームしてもカーソルの下の時刻が動かない", arguments: PropertyRuns.seeds(300))
     func zoomKeepsTheTimeUnderTheCursor(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x2003)
         let oldPPS = g.double(in: 8...600), newPPS = g.double(in: 8...600)
@@ -156,7 +156,7 @@ struct TimelineMathPropertyTests {
         }
     }
 
-    @Test("スクロール位置は範囲に収まり、2 度かけても変わらない", arguments: 0..<300)
+    @Test("スクロール位置は範囲に収まり、2 度かけても変わらない", arguments: PropertyRuns.seeds(300))
     func clampIsIdempotent(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x0C1A)
         let content = g.double(in: 0...50000), viewport = g.double(in: 100...2000)
@@ -199,7 +199,7 @@ struct SnapPropertyTests {
                              targets: s.targets, threshold: s.threshold, frameDuration: s.frame)
     }
 
-    @Test("同じ入力を食わせ直しても動かない", arguments: 0..<400)
+    @Test("同じ入力を食わせ直しても動かない", arguments: PropertyRuns.seeds(400))
     func resolvingIsStable(seed: Int) {
         let s = setup(seed: seed)
         let first = resolve(s)
@@ -209,7 +209,7 @@ struct SnapPropertyTests {
                 "\(first) が \(again) へ動いた（掴んだズレ \(s.grab)）")
     }
 
-    @Test("ポインタを進めれば結果も進む", arguments: 0..<400)
+    @Test("ポインタを進めれば結果も進む", arguments: PropertyRuns.seeds(400))
     func resolvingIsMonotonic(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0xB00B)
         let s = setup(seed: seed)
@@ -218,7 +218,7 @@ struct SnapPropertyTests {
                 "ポインタを +\(delta) 秒動かしたのに戻った")
     }
 
-    @Test("吸着先が無ければポインタに 1 フレーム以内で追従する", arguments: 0..<400)
+    @Test("吸着先が無ければポインタに 1 フレーム以内で追従する", arguments: PropertyRuns.seeds(400))
     func followsThePointerWithoutTargets(seed: Int) {
         var s = setup(seed: seed)
         s.targets = []
@@ -231,7 +231,7 @@ struct SnapPropertyTests {
                 "\(delta) 秒動かしたのに \(moved) 秒しか動いていない")
     }
 
-    @Test("結果は 0 より手前へ行かない", arguments: 0..<400)
+    @Test("結果は 0 より手前へ行かない", arguments: PropertyRuns.seeds(400))
     func neverGoesBeforeZero(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x0000)
         var s = setup(seed: seed)
@@ -239,7 +239,7 @@ struct SnapPropertyTests {
         #expect(resolve(s) >= 0)
     }
 
-    @Test("閾値の中に吸着先があればそこに乗る", arguments: 0..<300)
+    @Test("閾値の中に吸着先があればそこに乗る", arguments: PropertyRuns.seeds(300))
     func snapsToNearbyTargets(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x5A11)
         let frame = 1.0 / 30
@@ -286,7 +286,7 @@ struct WheelPropertyTests {
                             shift: i.shift, scrollY: i.scrollY, maxScrollY: i.maxScrollY)
     }
 
-    @Test("入力があれば必ずどちらかに動く", arguments: 0..<400)
+    @Test("入力があれば必ずどちらかに動く", arguments: PropertyRuns.seeds(400))
     func noInputIsSwallowed(seed: Int) {
         let i = input(seed: seed)
         guard i.deltaX != 0 || i.deltaY != 0 else { return }
@@ -298,7 +298,7 @@ struct WheelPropertyTests {
     /// 見るのは縦だけの入力（マウスホイールや二本指の縦スワイプ）。
     /// 横の入力が混ざっているときは振り分けをせずそのまま通し、
     /// 行き過ぎぶんは pan 側で切る。
-    @Test("縦だけの入力なら、縦に割り当てるぶんは余白を超えない", arguments: 0..<400)
+    @Test("縦だけの入力なら、縦に割り当てるぶんは余白を超えない", arguments: PropertyRuns.seeds(400))
     func verticalNeverExceedsTheRoom(seed: Int) {
         var i = input(seed: seed)
         i.deltaX = 0
@@ -309,7 +309,7 @@ struct WheelPropertyTests {
                 "縦に \(d.dy) 割り当てたが余白は \(room) しかない")
     }
 
-    @Test("縦だけの入力は、量を保ったまま縦と横へ分かれる", arguments: 0..<400)
+    @Test("縦だけの入力は、量を保ったまま縦と横へ分かれる", arguments: PropertyRuns.seeds(400))
     func verticalInputKeepsItsMagnitude(seed: Int) {
         var i = input(seed: seed)
         i.deltaX = 0
@@ -324,7 +324,7 @@ struct WheelPropertyTests {
         if d.dy != 0 { #expect((d.dy < 0) == (i.deltaY > 0)) }
     }
 
-    @Test("⇧ は必ず横だけになる", arguments: 0..<400)
+    @Test("⇧ は必ず横だけになる", arguments: PropertyRuns.seeds(400))
     func shiftAlwaysMeansHorizontal(seed: Int) {
         var i = input(seed: seed)
         i.shift = true
@@ -335,7 +335,7 @@ struct WheelPropertyTests {
 /// タイムコードの表示と読み取り。
 struct TimecodePropertyTests {
 
-    @Test("表示したタイムコードは同じ時刻に読み戻せる", arguments: 0..<400)
+    @Test("表示したタイムコードは同じ時刻に読み戻せる", arguments: PropertyRuns.seeds(400))
     func timecodeRoundTrips(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x71C0DE)
         let fps = [24, 30, 60][g.int(in: 0...2)]
@@ -350,7 +350,7 @@ struct TimecodePropertyTests {
                 "\(seconds) 秒 → 「\(text)」 → \(back) 秒")
     }
 
-    @Test("読み取った時刻を表示し直すと同じ文字列になる", arguments: 0..<400)
+    @Test("読み取った時刻を表示し直すと同じ文字列になる", arguments: PropertyRuns.seeds(400))
     func parsingIsStable(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x5AB1E)
         let fps = [24, 30, 60][g.int(in: 0...2)]

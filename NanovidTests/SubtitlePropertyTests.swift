@@ -31,7 +31,7 @@ struct SubtitleSegmentationPropertyTests {
         text.components(separatedBy: .whitespacesAndNewlines).joined()
     }
 
-    @Test("語は過不足なく、順番どおりに出てくる", arguments: 0..<300)
+    @Test("語は過不足なく、順番どおりに出てくる", arguments: PropertyRuns.seeds(300))
     func everyWordAppearsOnceInOrder(seed: Int) {
         let (input, options) = words(seed: seed)
         let lines = SubtitleSegmentation.lines(from: input, options: options)
@@ -44,7 +44,7 @@ struct SubtitleSegmentationPropertyTests {
             """)
     }
 
-    @Test("字幕は時刻順に並び、重ならない", arguments: 0..<300)
+    @Test("字幕は時刻順に並び、重ならない", arguments: PropertyRuns.seeds(300))
     func linesAreOrderedAndDoNotOverlap(seed: Int) {
         let (input, options) = words(seed: seed)
         let lines = SubtitleSegmentation.lines(from: input, options: options)
@@ -56,7 +56,7 @@ struct SubtitleSegmentationPropertyTests {
         }
     }
 
-    @Test("字幕の時間は元の語の範囲に収まる", arguments: 0..<300)
+    @Test("字幕の時間は元の語の範囲に収まる", arguments: PropertyRuns.seeds(300))
     func linesStayInsideTheTranscript(seed: Int) {
         let (input, options) = words(seed: seed)
         let lines = SubtitleSegmentation.lines(from: input, options: options)
@@ -71,7 +71,7 @@ struct SubtitleSegmentationPropertyTests {
         }
     }
 
-    @Test("空の字幕は作らない", arguments: 0..<300)
+    @Test("空の字幕は作らない", arguments: PropertyRuns.seeds(300))
     func noEmptyLines(seed: Int) {
         let (input, options) = words(seed: seed)
         for line in SubtitleSegmentation.lines(from: input, options: options) {
@@ -79,7 +79,7 @@ struct SubtitleSegmentationPropertyTests {
         }
     }
 
-    @Test("文字数の上限を大きく超えない", arguments: 0..<300)
+    @Test("文字数の上限を大きく超えない", arguments: PropertyRuns.seeds(300))
     func linesStayNearTheCharacterLimit(seed: Int) {
         let (input, options) = words(seed: seed)
         let lines = SubtitleSegmentation.lines(from: input, options: options)
@@ -93,7 +93,7 @@ struct SubtitleSegmentationPropertyTests {
         }
     }
 
-    @Test("空白だけの語しか無ければ字幕は作らない", arguments: 0..<50)
+    @Test("空白だけの語しか無ければ字幕は作らない", arguments: PropertyRuns.seeds(50))
     func blankTranscriptProducesNothing(seed: Int) {
         var g = SeededGenerator(seed: UInt64(seed) &+ 0x0B1A)
         let blanks = (0..<g.int(in: 1...8)).map { i in
@@ -103,7 +103,7 @@ struct SubtitleSegmentationPropertyTests {
         #expect(SubtitleSegmentation.lines(from: blanks).isEmpty)
     }
 
-    @Test("語の並びが前後していても時刻順に直してから割る", arguments: 0..<100)
+    @Test("語の並びが前後していても時刻順に直してから割る", arguments: PropertyRuns.seeds(100))
     func shuffledInputIsSortedFirst(seed: Int) {
         let (input, options) = words(seed: seed)
         var shuffled = input
