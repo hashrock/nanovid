@@ -15,6 +15,8 @@
   3. 訳の書式指定子がキーと食い違っていないか（%@ の数や順番の取り違え）
   4. カタログにあるのに Swift 側のどこにも見当たらないキー（警告どまり。
      `LName` で実行時に引くものはここに出るので、落とす材料にはしない）
+  5. その言語に無い複数形の区分を書いていないか（日本語に `one` を足しても
+     選ばれず、書いた側は直したつもりで直っていない）
 """
 
 import json
@@ -33,6 +35,38 @@ SPECIFIER = re.compile(r'%(?:\d+\$)?(?:#@\w+@|lld|[@dioux]|\.?\d*l?[fgeEs])')
 INTERPOLATION = re.compile(r'(?<!\\)\\\((?:[^()]|\([^()]*\))*\)')
 STRING_LITERAL = re.compile(r'"(?:[^"\\\n]|\\.)*"')
 L_CALL = re.compile(r'\bL\(\s*("(?:[^"\\\n]|\\.)*")\s*\)')
+
+
+# CLDR の複数形の区分。書いても選ばれない区分を弾くためだけに使うので、
+# 迷ったら黙っておく（表に無い言語は見ない）。日本語・中国語・韓国語などは
+# 単複の区別そのものが無く、どんな数でも other になる。
+PLURAL_CATEGORIES = {
+    'ja': {'other'}, 'zh': {'other'}, 'ko': {'other'}, 'th': {'other'},
+    'vi': {'other'}, 'id': {'other'}, 'ms': {'other'},
+    'en': {'one', 'other'}, 'de': {'one', 'other'}, 'nl': {'one', 'other'},
+    'es': {'one', 'other'}, 'it': {'one', 'other'}, 'pt': {'one', 'other'},
+    'sv': {'one', 'other'}, 'da': {'one', 'other'}, 'nb': {'one', 'other'},
+    'tr': {'one', 'other'}, 'fi': {'one', 'other'},
+}
+
+
+def plural_categories(language):
+    return PLURAL_CATEGORIES.get(language.split('-')[0].split('_')[0])
+
+
+def used_plural_categories(node, found=None):
+    """localizations の下で使われている複数形の区分を集める。"""
+    found = set() if found is None else found
+    if not isinstance(node, dict):
+        return found
+    for kind, child in (node.get('variations') or {}).items():
+        if kind == 'plural':
+            found.update((child or {}).keys())
+        for grandchild in (child or {}).values():
+            used_plural_categories(grandchild, found)
+    for child in (node.get('substitutions') or {}).values():
+        used_plural_categories(child, found)
+    return found
 
 
 def punch(text):
@@ -145,6 +179,17 @@ def main():
                 elif sorted(actual) != sorted(expected):
                     errors.append('%s の書式指定子がキーと違います: %r -> %r (%s / %s)'
                                   % (language, key, value, expected, actual))
+
+    # 5. その言語に無い複数形の区分
+    for key in sorted(strings):
+        for language, localization in (strings[key].get('localizations') or {}).items():
+            categories = plural_categories(language)
+            if categories is None:
+                continue
+            for category in sorted(used_plural_categories(localization)):
+                if category not in categories:
+                    errors.append('%s に %r の複数形はありません（書いても選ばれない）: %r'
+                                  % (language, category, key))
 
     # 4. 使われていないかもしれないキー
     for key in sorted(strings):

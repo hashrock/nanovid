@@ -8,9 +8,14 @@ import Foundation
 /// ところ」だけ。複数形の切り替わりと、文書に保存される名前が環境の言語に
 /// 引きずられないことの 2 つ。
 ///
-/// 走らせる側の言語に左右されないよう、訳は `en.lproj` / `ja.lproj` を名指しで
-/// 読む。`Bundle.main` はテストホストの Nanovid.app なので、そこに入っている
-/// 実際の成果物を見ていることになる。
+/// 走らせる側の言語に左右されないよう、訳は `en.lproj` を名指しで読む。
+/// `Bundle.main` はテストホストの Nanovid.app なので、そこに入っている実際の
+/// 成果物を見ていることになる。
+///
+/// 日本語はソース言語で、カタログに訳を持たない。表そのものが作られないので
+/// `ja.lproj` は出来上がらず、日本語で出るのはキーの文字列そのものになる。
+/// 日本語に単数形が無いこと（`one` の変種を書いても選ばれない）は実行時では
+/// なく Scripts/check-localization.py が見ている。
 struct LocalizationTests {
 
     private static func bundle(_ language: String) throws -> Bundle {
@@ -51,15 +56,6 @@ struct LocalizationTests {
         #expect(try Self.format(key, 1, 1, language: "en") == "1 prop · 1 in use")
         #expect(try Self.format(key, 3, 1, language: "en") == "3 props · 1 in use")
         #expect(try Self.format(key, 3, 0, language: "en") == "3 props · 0 in use")
-    }
-
-    /// 日本語には CLDR の単数形（one）が無く、変種を書いても選ばれない。
-    /// 「1 個のときは数を出さない」たぐいの出し分けはカタログに寄せられないので、
-    /// 呼ぶ側で分けるしかない（InspectorView のクリップ見出しなど）。
-    @Test("日本語ではどの数でも同じ言い方になる")
-    func japaneseHasNoSingular() throws {
-        #expect(try Self.format("%lld 件", 1, language: "ja") == "1 件")
-        #expect(try Self.format("%lld 件", 3, language: "ja") == "3 件")
     }
 
     @Test("尺の要約は 1 個のときだけ範囲を出さない")
