@@ -99,13 +99,22 @@ struct TextClipsPane: View {
     /// 音声からの自動生成。進行中は進み具合と中止に差し替わる。
     @ViewBuilder
     private var generateControl: some View {
-        if let value = store.subtitleProgress {
-            ProgressView(value: value)
-                .progressViewStyle(.linear)
-                .frame(width: 110)
-            Text("書き起こし中 \(Int(value * 100))%")
+        if let progress = store.subtitleProgress {
+            // 割合が取れる段階だけ帯にする。取れないあいだにゼロの帯を出すと、
+            // 止まっているように見える。
+            if let fraction = progress.fraction {
+                ProgressView(value: fraction)
+                    .progressViewStyle(.linear)
+                    .frame(width: 110)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+            }
+            Text(progress.text)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize()
             Button("中止") { store.cancelSubtitleGeneration() }
                 .font(.caption)
         } else {

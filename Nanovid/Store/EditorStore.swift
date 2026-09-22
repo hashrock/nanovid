@@ -32,7 +32,7 @@ final class EditorStore {
     var extractStart: Double?
 
     /// 字幕の自動生成の進み具合。nil なら動いていない。
-    var subtitleProgress: Double?
+    var subtitleProgress: SubtitleProgress?
     /// 動いている書き起こし。中止のために持っておく（型は macOS 26 限定なので AnyObject）。
     @ObservationIgnored var transcriberHandle: AnyObject?
 

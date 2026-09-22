@@ -20,7 +20,7 @@ extension EditorStore {
 
         let worker = Transcriber()
         transcriberHandle = worker
-        subtitleProgress = 0
+        subtitleProgress = SubtitleProgress(phase: .preparing, fraction: nil)
         defer {
             subtitleProgress = nil
             transcriberHandle = nil
@@ -32,6 +32,7 @@ extension EditorStore {
             ) { value in
                 Task { @MainActor [weak self] in self?.subtitleProgress = value }
             }
+            subtitleProgress = SubtitleProgress(phase: .finishing, fraction: nil)
             let lines = SubtitleSegmentation.lines(from: words, options: options)
             guard !lines.isEmpty else {
                 buildError = "音声から文字を聞き取れませんでした。"

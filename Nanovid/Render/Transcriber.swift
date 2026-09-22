@@ -12,6 +12,45 @@ enum SubtitleGeneration {
     static let requirement = "字幕の自動生成には macOS 26 以降が必要です。"
 }
 
+/// 字幕の自動生成の進み具合。
+///
+/// 割合だけだと、言語モデルの取り寄せや音声の組み立てで長く 0% のまま止まって見える。
+/// 実際に「聞き取り」に入るまでにいくつも段階があるので、どこにいるかを添える。
+struct SubtitleProgress: Equatable, Sendable {
+    enum Phase: Equatable, Sendable {
+        /// 言語モデルがあるか確かめている。
+        case preparing
+        /// 言語モデルを取り寄せている。初回だけ。
+        case downloadingModel
+        /// タイムラインの音声をまとめている。
+        case buildingAudio
+        /// 聞き取っている。
+        case listening
+        /// 聞き取りを終えて、結果をまとめている。
+        case finishing
+
+        var label: String {
+            switch self {
+            case .preparing: return "準備中"
+            case .downloadingModel: return "言語モデルを取り寄せ中"
+            case .buildingAudio: return "音声をまとめ中"
+            case .listening: return "聞き取り中"
+            case .finishing: return "字幕にしています"
+            }
+        }
+    }
+
+    var phase: Phase
+    /// 測れる段階だけ 0…1。測れないあいだは nil にして、ぐるぐるを出す。
+    var fraction: Double?
+
+    /// 画面に出す一文。
+    var text: String {
+        guard let fraction else { return phase.label }
+        return "\(phase.label) \(Int((fraction * 100).rounded()))%"
+    }
+}
+
 enum TranscriptionError: LocalizedError {
     case unavailable
     case unsupportedLocale(String)
@@ -68,8 +107,9 @@ final class Transcriber {
     func transcribe(project: Project,
                     baseURL: URL?,
                     locale: Locale,
-                    progress: @escaping @Sendable (Double) -> Void) async throws -> [TranscribedWord] {
+                    progress: @escaping @Sendable (SubtitleProgress) -> Void) async throws -> [TranscribedWord] {
 
+        progress(SubtitleProgress(phase: .preparing, fraction: nil))
         guard await Self.isSupported(locale) else {
             throw TranscriptionError.unsupportedLocale(
                 locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier)
@@ -88,10 +128,17 @@ final class Transcriber {
             throw TranscriptionError.unsupportedLocale(locale.identifier)
         default:
             if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                // 初回は数百 MB 取り寄せることがある。何も出さないと固まって見える。
+                progress(SubtitleProgress(phase: .downloadingModel, fraction: nil))
+                let watching = Self.watch(request.progress) { fraction in
+                    progress(SubtitleProgress(phase: .downloadingModel, fraction: fraction))
+                }
+                defer { watching.invalidate() }
                 try await request.downloadAndInstall()
             }
         }
 
+        progress(SubtitleProgress(phase: .buildingAudio, fraction: nil))
         let built = try await CompositionBuilder.build(project: project, baseURL: baseURL)
         let audioTracks = built.composition.tracks(withMediaType: .audio)
         guard !audioTracks.isEmpty else { throw TranscriptionError.noAudio }
@@ -124,6 +171,7 @@ final class Transcriber {
             return words
         }
 
+        progress(SubtitleProgress(phase: .listening, fraction: 0))
         let total = max(built.duration, 0.001)
         let feeding = Task.detached { [format] in
             defer { continuation.finish() }
@@ -135,17 +183,28 @@ final class Transcriber {
                 guard let buffer = Self.pcmBuffer(from: sample, format: format) else { continue }
                 let time = CMSampleBufferGetPresentationTimeStamp(sample)
                 continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: time))
-                progress(min(1, time.secondsOrZero / total))
+                progress(SubtitleProgress(phase: .listening,
+                                          fraction: min(1, time.secondsOrZero / total)))
             }
         }
 
         _ = try await analyzer.analyzeSequence(stream)
-        try await analyzer.finalizeAndFinishThroughEndOfInput()
         await feeding.value
+        // 音声を流し終えてからも、まだ認識結果が届く。ここで待つ。
+        progress(SubtitleProgress(phase: .finishing, fraction: nil))
+        try await analyzer.finalizeAndFinishThroughEndOfInput()
 
         if cancelled { return [] }
-        progress(1)
         return try await collecting.value.sorted { $0.start < $1.start }
+    }
+
+    /// Progress を覗いて割合を流す。取り寄せの進み具合は KVO でしか取れない。
+    private static func watch(_ progress: Progress,
+                              report: @escaping @Sendable (Double) -> Void) -> NSKeyValueObservation {
+        report(progress.fractionCompleted)
+        return progress.observe(\.fractionCompleted, options: [.initial, .new]) { progress, _ in
+            report(progress.fractionCompleted)
+        }
     }
 
     // MARK: - 変換まわり

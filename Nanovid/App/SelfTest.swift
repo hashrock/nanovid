@@ -89,8 +89,18 @@ enum SelfTest {
                          content: .media(assetID: asset.id, sourceStart: 0))
                 ]
 
+                // 進み具合をそのまま出す。画面に何が見えるかをここで確かめられる。
+                let reported = Mutex<String?>(nil)
                 let words = try await Transcriber().transcribe(
-                    project: project, baseURL: nil, locale: locale) { _ in }
+                    project: project, baseURL: nil, locale: locale
+                ) { progress in
+                    let line = progress.text
+                    reported.withLock { last in
+                        guard last != line else { return }
+                        last = line
+                        print("  … \(line)")
+                    }
+                }
                 let lines = SubtitleSegmentation.lines(from: words)
 
                 print("語 \(words.count) 個 → 字幕 \(lines.count) 枚")
@@ -487,5 +497,18 @@ enum SelfTest {
             }
         }
         try file.write(from: buf)
+    }
+}
+
+/// 小さな排他。進み具合の重複を落とすだけに使う。
+final class Mutex<Value>: @unchecked Sendable {
+    private var value: Value
+    private let lock = NSLock()
+
+    init(_ value: Value) { self.value = value }
+
+    func withLock<R>(_ body: (inout Value) -> R) -> R {
+        lock.lock(); defer { lock.unlock() }
+        return body(&value)
     }
 }
