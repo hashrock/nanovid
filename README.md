@@ -42,10 +42,23 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 すでに起動している nanovid は終了させてから開き直すので、作り直したビルドが
 確実に立ち上がる。
 
-ユニットテスト（Swift Testing、239 件）:
+ユニットテスト（Swift Testing）:
 
 ```sh
-xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid   # Xcode からは ⌘U
+Scripts/test.sh            # 速い層だけ（既定）。Xcode からは ⌘U
+Scripts/test.sh --all      # 重い層も含めて全部（CI と同じ）
+```
+
+普段流すのは関数レベルの速い層だけ。合成を組んで実際に絵を描くもの、実ファイルを
+AVFoundation に読ませるものは重い層に分けてあり、既定では飛ばす。性質テストの種も
+速い層では 1/4 に間引く。重い層と全部の種は CI（`.github/workflows/ci.yml`、push
+ごとに macOS ランナーで `--all` と `--selftest`）が回すので、手元で毎回通す必要は
+ない。層分けと切り替えは `NanovidTests/TestTiers.swift` にある。
+
+```sh
+Scripts/test.sh --only HeadlessRenderTests   # スイート 1 つだけ
+xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid \
+  TEST_RUNNER_NANOVID_TESTS=all              # 素の xcodebuild で全部
 ```
 
 テストの置き場はアプリ本体（`TEST_HOST`）なので、走らせるとアプリごと立ち上がる。
@@ -95,7 +108,8 @@ frame?.difference(from: other)          // 2 枚の画素差の平均
 ```
 
 これで背景色・フェード・重なり順・変形・不透明度と、「書き出す範囲を切り出しても
-同じ絵になるか」を画素で確かめている。以前はマウス操作を合成する実機チェックを
+同じ絵になるか」を画素で確かめている。Metal と AVFoundation を起こすぶん、
+関数レベルのテストよりは重いので重い層に置いてある（`Scripts/test.sh --all`）。以前はマウス操作を合成する実機チェックを
 置いていたが、実機の入力状態に引きずられて本体と関係なく落ちるので消した。
 
 起動時にプロジェクトを開く / 動作確認用のプロジェクトを書き出す:
