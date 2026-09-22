@@ -24,6 +24,9 @@ struct TimelineView: View {
     @State private var wheelMonitor: Any?
     @State private var scrollBarGrabOffset: Double?
     @State private var verticalBarGrabOffset: Double?
+    /// 吸着を効かせるか。プロジェクトではなく端末ごとの好みなので AppStorage で持つ。
+    @AppStorage("nanovid.timeline.snapping") private var snappingEnabled = true
+
     @State private var drag: ClipDrag?
     @State private var dropTargetTrack: UUID?
     @State private var hoveredClipID: UUID?
@@ -115,6 +118,13 @@ struct TimelineView: View {
                 .foregroundStyle(.secondary)
 
             Divider().frame(height: 16)
+
+            Toggle(isOn: $snappingEnabled) {
+                // magnet は macOS 26 の SF Symbols に無い。pin で代用する。
+                Label("吸着", systemImage: snappingEnabled ? "pin" : "pin.slash")
+            }
+            .toggleStyle(.button)
+            .help("クリップの端や再生ヘッドへの吸着 (ドラッグ中に ⌥ で一時的に切り替え)")
 
             Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
                 .help("再生ヘッドの位置でクリップを分割 (S)")
@@ -279,7 +289,7 @@ struct TimelineView: View {
                 .clipped()
                 .padding(.top, Self.rulerHeight)
 
-                RulerView(store: store, scrollX: offsetX)
+                RulerView(store: store, scrollX: offsetX, snappingEnabled: snappingEnabled)
                     .frame(width: geo.size.width, height: Self.rulerHeight, alignment: .topLeading)
                     .clipped()
             }
@@ -644,7 +654,26 @@ struct TimelineView: View {
     // MARK: - スナップ
 
     /// 吸着が効く距離。画面上 8pt ぶんを時間に直す。
-    private var snapThreshold: Double { 8.0 / pps }
+    /// 切っているあいだは 0 にして、フレーム境界への丸めだけ残す。
+    /// フレームから外れた位置は動画として意味がないので、そこは常に丸める。
+    ///
+    /// - Parameter inverted: ⌥ のように、そのときだけ設定を裏返す指示。
+    static func snapThreshold(pixelsPerSecond pps: Double,
+                              enabled: Bool, inverted: Bool) -> Double {
+        let snapping = inverted ? !enabled : enabled
+        return snapping ? 8.0 / max(pps, 1) : 0
+    }
+
+    /// ドラッグの最中に読むので、⌥ の状態はそのつど見る。
+    /// DragGesture の値には修飾キーが載ってこないため。
+    static func liveSnapThreshold(pixelsPerSecond pps: Double, enabled: Bool) -> Double {
+        snapThreshold(pixelsPerSecond: pps, enabled: enabled,
+                      inverted: NSEvent.modifierFlags.contains(.option))
+    }
+
+    private var snapThreshold: Double {
+        Self.liveSnapThreshold(pixelsPerSecond: pps, enabled: snappingEnabled)
+    }
 
     /// 吸着先。一緒に動くもの以外のクリップ端・再生ヘッド・原点。
     /// まとめて動かしているときに相手へ吸着すると、位置関係が崩れてしまう。
@@ -1007,6 +1036,8 @@ struct TimelineView: View {
 private struct RulerView: View {
     @Bindable var store: EditorStore
     let scrollX: Double
+    /// 吸着の設定。実際に効かせるかは、ドラッグの最中に ⌥ を見て決める。
+    let snappingEnabled: Bool
 
     /// マーカーのドラッグはここを基準に測る。マーカー自身のローカル座標で
     /// 測ると、動かした結果が次の入力に混ざって振動する。
@@ -1141,7 +1172,9 @@ private struct RulerView: View {
                                                   scrollX: scrollX, pixelsPerSecond: pps)
                 let target = TimelineSnap.resolve(pointerTime: pointer, grabOffset: grab,
                                                   targets: snapTargets(for: edge),
-                                                  threshold: 8 / max(pps, 1),
+                                                  threshold: TimelineView.liveSnapThreshold(
+                                                      pixelsPerSecond: pps,
+                                                      enabled: snappingEnabled),
                                                   frameDuration: store.project.canvas.frameDuration)
                 if edge.isStart {
                     store.setOutputStart(target, coalescing: "outputStart")

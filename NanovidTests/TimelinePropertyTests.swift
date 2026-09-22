@@ -362,3 +362,39 @@ struct TimecodePropertyTests {
         #expect(Format.timecode(parsed, fps: fps) == text)
     }
 }
+
+/// 吸着の入切。
+struct SnapToggleTests {
+
+    @Test("切っていれば吸着の距離は 0 になる")
+    func disabledMeansNoSnapping() {
+        #expect(TimelineView.snapThreshold(pixelsPerSecond: 80, enabled: false, inverted: false) == 0)
+        #expect(TimelineView.snapThreshold(pixelsPerSecond: 80, enabled: true, inverted: false) > 0)
+    }
+
+    @Test("⌥ を押しているあいだは設定が裏返る")
+    func optionInvertsTheSetting() {
+        #expect(TimelineView.snapThreshold(pixelsPerSecond: 80, enabled: true, inverted: true) == 0)
+        #expect(TimelineView.snapThreshold(pixelsPerSecond: 80, enabled: false, inverted: true) > 0)
+    }
+
+    @Test("吸着の距離は画面上 8pt ぶん", arguments: [8.0, 80.0, 600.0])
+    func thresholdIsEightPointsOnScreen(pps: Double) {
+        let threshold = TimelineView.snapThreshold(pixelsPerSecond: pps,
+                                                   enabled: true, inverted: false)
+        #expect(abs(threshold * pps - 8) < 1e-9)
+    }
+
+    @Test("距離 0 なら吸着せず、フレーム境界へ丸めるだけ")
+    func zeroThresholdOnlyRoundsToFrames() {
+        let frame = 1.0 / 30
+        // 2.0 秒の吸着先のすぐ近くを指しても、乗らずにフレーム境界へ落ちる。
+        let result = TimelineSnap.resolve(pointerTime: 2.0 + frame * 0.4, grabOffset: 0,
+                                          targets: [2.0], threshold: 0, frameDuration: frame)
+        #expect(abs(result - 2.0) < 1e-9, "たまたま同じフレームに乗るはず")
+
+        let further = TimelineSnap.resolve(pointerTime: 2.0 + frame * 1.4, grabOffset: 0,
+                                           targets: [2.0], threshold: 0, frameDuration: frame)
+        #expect(abs(further - (2.0 + frame)) < 1e-9, "1 フレーム先のまま。吸着で戻らない")
+    }
+}
