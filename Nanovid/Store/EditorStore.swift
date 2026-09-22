@@ -229,11 +229,11 @@ final class EditorStore {
         // 読み込みの失敗。status が .failed になるのは item ごとに一度きり。
         itemStatusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
             guard item.status == .failed else { return }
-            let message = item.error?.localizedDescription ?? "不明なエラー"
+            let message = item.error?.localizedDescription ?? L("不明なエラー")
             Task { @MainActor [weak self] in
                 guard let self, self.player.currentItem === item else { return }
                 self.isPlaying = false
-                self.buildError = "プレビューを再生できません: \(message)"
+                self.buildError = L("プレビューを再生できません: \(message)")
             }
         }
 
@@ -245,7 +245,8 @@ final class EditorStore {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.isPlaying = false
-                self.buildError = "再生の途中で止まりました: \(error?.localizedDescription ?? "不明なエラー")"
+                let reason = error?.localizedDescription ?? L("不明なエラー")
+                self.buildError = L("再生の途中で止まりました: \(reason)")
             }
         }
     }

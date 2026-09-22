@@ -66,7 +66,7 @@ struct ExportView: View {
 
             if isExporting {
                 ProgressView(value: progress) {
-                    Text("書き出し中… \(Int(progress * 100))%")
+                    Text("書き出し中… \(percentText)")
                         .font(.caption)
                 }
             }
@@ -111,10 +111,16 @@ struct ExportView: View {
         .onAppear { if outputURL == nil { outputURL = defaultOutputURL() } }
     }
 
+    /// 進み具合の百分率。"%" を付けた文字列を先に作って渡す。
+    /// リテラルの "%" を訳のキーに混ぜると書式指定子と紛れる。
+    private var percentText: String {
+        "\(Int(progress * 100))%"
+    }
+
     private var estimate: String {
         let bitrate = settings.videoBitrate(canvas: canvas) + settings.audioBitrate
         let bytes = Int(Double(bitrate) / 8 * store.duration)
-        return "\(bitrate / 1_000_000) Mbps · 約 \(Format.fileSize(bytes))"
+        return L("\(bitrate / 1_000_000) Mbps · 約 \(Format.fileSize(bytes))")
     }
 
     private func defaultOutputURL() -> URL? {

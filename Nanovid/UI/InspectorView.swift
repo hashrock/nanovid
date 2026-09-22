@@ -175,11 +175,11 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("フェード").font(.caption).foregroundStyle(.secondary)
             NumberRow(label: "イン", value: mixed(clips) { $0.fade.inDuration },
-                      range: 0...5, unit: "秒") { v in
+                      range: 0...5, unit: L("秒")) { v in
                 store.updateSelectedClips { $0.fade.inDuration = min(v, $0.duration / 2) }
             }
             NumberRow(label: "アウト", value: mixed(clips) { $0.fade.outDuration },
-                      range: 0...5, unit: "秒") { v in
+                      range: 0...5, unit: L("秒")) { v in
                 store.updateSelectedClips { $0.fade.outDuration = min(v, $0.duration / 2) }
             }
         }
@@ -269,8 +269,8 @@ struct InspectorView: View {
 // MARK: - 部品
 
 struct SectionHeader: View {
-    let title: String
-    init(_ title: String) { self.title = title }
+    let title: LocalizedStringKey
+    init(_ title: LocalizedStringKey) { self.title = title }
     var body: some View {
         Text(title).font(.headline)
     }
@@ -278,7 +278,7 @@ struct SectionHeader: View {
 
 /// 値が混在しているときは空欄になる数値入力。
 struct NumberRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let value: Double?
     let range: ClosedRange<Double>
     let unit: String
@@ -425,7 +425,7 @@ struct CanvasPresetOption: Identifiable {
 /// 確定するまで外の値で上書きしない。打っている途中に
 /// 正規化された文字列が降ってくると、カーソルが飛んで打てなくなる。
 struct TimecodeRow: View {
-    let label: String
+    let label: LocalizedStringKey
     let seconds: Double
     let fps: Int
     let onCommit: (Double) -> Void

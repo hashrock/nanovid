@@ -136,8 +136,8 @@ struct TemplateEditorView: View {
 
     private func addNode(_ kind: NodeKind) {
         var node = TemplateNode(name: {
-            if case .text = kind { return "テキスト" }
-            return "図形"
+            if case .text = kind { return L("テキスト") }
+            return L("図形")
         }(), kind: kind)
         node.frame = RelFrame(x: 0.5, y: 0.5, width: 0.7, height: 0.12, anchor: .center)
         draft?.nodes.append(node)
@@ -154,7 +154,7 @@ struct TemplateEditorView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 Button {
-                    var def = PropDef(key: uniqueKey(template), label: "新しい項目",
+                    var def = PropDef(key: uniqueKey(template), label: L("新しい項目"),
                                       type: .string, defaultValue: .string(""))
                     def.id = UUID()
                     draft?.props.append(def)
@@ -297,7 +297,7 @@ struct TemplateEditorView: View {
             Button("複製して新規に") {
                 guard var copy = draft else { return }
                 copy.id = UUID()
-                copy.name += " のコピー"
+                copy.name += L(" のコピー")
                 copy.nodes = copy.nodes.map { var n = $0; n.id = UUID(); return n }
                 store.upsertTemplate(copy)
                 dismiss()
@@ -427,7 +427,7 @@ private struct NodeInspector: View {
         }
     }
 
-    private func ratioField(_ label: String, _ value: Binding<Double>) -> some View {
+    private func ratioField(_ label: LocalizedStringKey, _ value: Binding<Double>) -> some View {
         HStack(spacing: 6) {
             Text(label).font(.caption).frame(width: 52, alignment: .leading)
             Slider(value: value, in: -0.5...1.5)
@@ -574,7 +574,7 @@ private struct NodeInspector: View {
 
     // MARK: 部品
 
-    private func numberRow(_ label: String, _ value: Double,
+    private func numberRow(_ label: LocalizedStringKey, _ value: Double,
                            range: ClosedRange<Double>,
                            onChange: @escaping (Double) -> Void) -> some View {
         HStack(spacing: 6) {
@@ -590,7 +590,7 @@ private struct NodeInspector: View {
 
 /// 「固定値」と「props へのバインド」を切り替える入力欄。
 private struct ValueRefEditor: View {
-    let label: String
+    let label: LocalizedStringKey
     let type: PropType
     let template: TextTemplate
     @Binding var value: ValueRef

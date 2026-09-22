@@ -19,10 +19,10 @@ enum BuildError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .emptyProject: return "タイムラインに何も置かれていません。"
-        case .assetMissing(let name): return "素材が見つかりません: \(name)"
-        case .unreadable(let name): return "素材を読み込めません: \(name)"
-        case .undecodable(let name): return "「\(name)」はこの Mac で再生できない形式です。"
+        case .emptyProject: return L("タイムラインに何も置かれていません。")
+        case .assetMissing(let name): return L("素材が見つかりません: \(name)")
+        case .unreadable(let name): return L("素材を読み込めません: \(name)")
+        case .undecodable(let name): return L("「\(name)」はこの Mac で再生できない形式です。")
         }
     }
 }
@@ -82,7 +82,7 @@ enum CompositionBuilder {
 
                 case .media(let assetID, let sourceStart):
                     guard let asset = project.asset(assetID) else {
-                        throw BuildError.assetMissing("(不明な素材)")
+                        throw BuildError.assetMissing(L("(不明な素材)"))
                     }
                     let url = asset.url(relativeTo: baseURL)
                     guard FileManager.default.fileExists(atPath: url.path) else {

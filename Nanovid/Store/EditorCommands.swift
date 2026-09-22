@@ -23,7 +23,7 @@ extension EditorStore {
                 // 再生できない形式や、途中で切れたファイル。理由をそのまま出す。
                 buildError = problem.localizedDescription
             } catch {
-                buildError = "読み込めませんでした: \(url.lastPathComponent)"
+                buildError = L("読み込めませんでした: \(url.lastPathComponent)")
             }
         }
         guard !made.isEmpty else { return [] }
@@ -518,14 +518,14 @@ extension EditorStore {
     func duplicateTemplate(_ id: UUID) {
         guard var t = project.template(id) else { return }
         t.id = UUID()
-        t.name += " のコピー"
+        t.name += L(" のコピー")
         t.nodes = t.nodes.map { var n = $0; n.id = UUID(); return n }
         edit { $0.textTemplates.append(t) }
     }
 
     func removeTemplate(_ id: UUID) {
         guard project.textClips(usingTemplate: id).isEmpty else {
-            buildError = "このテンプレートは使用中です。"
+            buildError = L("このテンプレートは使用中です。")
             return
         }
         edit { $0.textTemplates.removeAll { $0.id == id } }

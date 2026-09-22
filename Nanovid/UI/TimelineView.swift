@@ -216,12 +216,12 @@ struct TimelineView: View {
 
     private var selectionSummary: String {
         let count = store.selectedClipIDs.count
-        guard let span = store.selectionSpan else { return "\(count) 個" }
+        guard let span = store.selectionSpan else { return L("\(count) 個") }
         let total = store.mergedRanges(of: store.selectedClipIDs)
             .reduce(0.0) { $0 + ($1.upperBound - $1.lowerBound) }
         return count == 1
-            ? "1 個 · \(Format.seconds(total)) 秒"
-            : "\(count) 個 · \(Format.seconds(total)) 秒 / 範囲 \(Format.seconds(span.upperBound - span.lowerBound)) 秒"
+            ? L("1 個 · \(Format.seconds(total)) 秒")
+            : L("\(count) 個 · \(Format.seconds(total)) 秒 / 範囲 \(Format.seconds(span.upperBound - span.lowerBound)) 秒")
     }
 
     /// 選択したクリップが画面いっぱいに入るまで寄る。
@@ -1389,10 +1389,10 @@ private struct ClipView: View {
                 }
                 return template.name
             }
-            return "テキスト"
+            return L("テキスト")
         }
         if !clip.name.isEmpty { return clip.name }
-        if let id = clip.content.assetID { return store.project.asset(id)?.displayName ?? "クリップ" }
-        return "クリップ"
+        if let id = clip.content.assetID { return store.project.asset(id)?.displayName ?? L("クリップ") }
+        return L("クリップ")
     }
 }

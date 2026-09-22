@@ -86,7 +86,7 @@ enum PaneDivider {
 enum BottomTab: String, CaseIterable, Identifiable {
     case timeline, text
     var id: String { rawValue }
-    var label: String { self == .timeline ? "タイムライン" : "字幕" }
+    var label: String { self == .timeline ? L("タイムライン") : L("字幕") }
 }
 
 /// 下段の見出しに置くタブ切り替え。タイムライン側と字幕側で同じものを使う。

@@ -9,7 +9,7 @@ extension TextTemplate {
         let textID = UUID()
         let textNode = TemplateNode(
             id: textID,
-            name: "本文",
+            name: L("本文"),
             frame: RelFrame(x: 0.5, y: 0.88, width: 0.86, height: 0.12, anchor: .bottom),
             kind: .text(TextNodeSpec(
                 text: .prop("text"),
@@ -22,7 +22,7 @@ extension TextTemplate {
             ))
         )
         let plate = TemplateNode(
-            name: "背景板",
+            name: L("背景板"),
             frame: RelFrame(x: 0.5, y: 0.88, width: 0.86, height: 0.12, anchor: .bottom),
             kind: .rect(RectNodeSpec(
                 fill: .prop("plateColor"),
@@ -32,12 +32,12 @@ extension TextTemplate {
             ))
         )
         return TextTemplate(
-            name: "字幕",
+            name: L("字幕"),
             nodes: [plate, textNode],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("ここに字幕")),
-                PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
-                PropDef(key: "plateColor", label: "背景色", type: .color,
+                PropDef(key: "text", label: L("テキスト"), type: .string, defaultValue: .string(L("ここに字幕"))),
+                PropDef(key: "textColor", label: L("文字色"), type: .color, defaultValue: .color(.white)),
+                PropDef(key: "plateColor", label: L("背景色"), type: .color,
                         defaultValue: .color(RGBAColor(r: 0, g: 0, b: 0, a: 0.66))),
             ]
         )
@@ -46,7 +46,7 @@ extension TextTemplate {
     /// シンプル字幕：背景板なし。縁取りだけで背景から浮かせる。
     static func plainSubtitle() -> TextTemplate {
         let node = TemplateNode(
-            name: "本文",
+            name: L("本文"),
             frame: RelFrame(x: 0.5, y: 0.9, width: 0.88, height: 0.12, anchor: .bottom),
             kind: .text(TextNodeSpec(
                 text: .prop("text"),
@@ -62,12 +62,12 @@ extension TextTemplate {
             ))
         )
         return TextTemplate(
-            name: "シンプル字幕",
+            name: L("シンプル字幕"),
             nodes: [node],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("ここに字幕")),
-                PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
-                PropDef(key: "strokeColor", label: "縁の色", type: .color, defaultValue: .color(.black)),
+                PropDef(key: "text", label: L("テキスト"), type: .string, defaultValue: .string(L("ここに字幕"))),
+                PropDef(key: "textColor", label: L("文字色"), type: .color, defaultValue: .color(.white)),
+                PropDef(key: "strokeColor", label: L("縁の色"), type: .color, defaultValue: .color(.black)),
             ]
         )
     }
@@ -77,7 +77,7 @@ extension TextTemplate {
         let textID = UUID()
         let text = TemplateNode(
             id: textID,
-            name: "本文",
+            name: L("本文"),
             frame: RelFrame(x: 0.05, y: 0.92, width: 0.55, height: 0.08, anchor: .bottomLeft),
             kind: .text(TextNodeSpec(
                 text: .prop("text"),
@@ -89,7 +89,7 @@ extension TextTemplate {
             ))
         )
         let plate = TemplateNode(
-            name: "背景板",
+            name: L("背景板"),
             frame: RelFrame(x: 0.05, y: 0.92, width: 0.55, height: 0.08, anchor: .bottomLeft),
             kind: .rect(RectNodeSpec(
                 fill: .prop("plateColor"),
@@ -99,12 +99,12 @@ extension TextTemplate {
             ))
         )
         return TextTemplate(
-            name: "テロップ（左下）",
+            name: L("テロップ（左下）"),
             nodes: [plate, text],
             props: [
-                PropDef(key: "text", label: "テキスト", type: .string, defaultValue: .string("補足メモ")),
-                PropDef(key: "textColor", label: "文字色", type: .color, defaultValue: .color(.white)),
-                PropDef(key: "plateColor", label: "背景色", type: .color,
+                PropDef(key: "text", label: L("テキスト"), type: .string, defaultValue: .string(L("補足メモ"))),
+                PropDef(key: "textColor", label: L("文字色"), type: .color, defaultValue: .color(.white)),
+                PropDef(key: "plateColor", label: L("背景色"), type: .color,
                         defaultValue: .color(RGBAColor(hex: "#000000A6") ?? .black)),
             ]
         )
@@ -113,12 +113,12 @@ extension TextTemplate {
     /// タイトル：大見出し＋サブ。アクセントの帯付き。
     static func title() -> TextTemplate {
         let bar = TemplateNode(
-            name: "アクセント",
+            name: L("アクセント"),
             frame: RelFrame(x: 0.12, y: 0.5, width: 0.006, height: 0.2, anchor: .left),
             kind: .rect(RectNodeSpec(fill: .prop("accent"), cornerRadius: 0.003, fitToNodeID: nil))
         )
         let title = TemplateNode(
-            name: "見出し",
+            name: L("見出し"),
             frame: RelFrame(x: 0.145, y: 0.455, width: 0.72, height: 0.14, anchor: .bottomLeft),
             kind: .text(TextNodeSpec(
                 text: .prop("title"),
@@ -130,7 +130,7 @@ extension TextTemplate {
             ))
         )
         let sub = TemplateNode(
-            name: "サブ",
+            name: L("サブ"),
             frame: RelFrame(x: 0.145, y: 0.5, width: 0.72, height: 0.08, anchor: .topLeft),
             kind: .text(TextNodeSpec(
                 text: .prop("subtitle"),
@@ -142,13 +142,13 @@ extension TextTemplate {
             ))
         )
         return TextTemplate(
-            name: "タイトル",
+            name: L("タイトル"),
             nodes: [bar, title, sub],
             props: [
-                PropDef(key: "title", label: "見出し", type: .string, defaultValue: .string("タイトル")),
-                PropDef(key: "subtitle", label: "サブ", type: .string, defaultValue: .string("subtitle")),
-                PropDef(key: "titleColor", label: "見出し色", type: .color, defaultValue: .color(.white)),
-                PropDef(key: "accent", label: "アクセント", type: .color,
+                PropDef(key: "title", label: L("見出し"), type: .string, defaultValue: .string(L("タイトル"))),
+                PropDef(key: "subtitle", label: L("サブ"), type: .string, defaultValue: .string("subtitle")),
+                PropDef(key: "titleColor", label: L("見出し色"), type: .color, defaultValue: .color(.white)),
+                PropDef(key: "accent", label: L("アクセント"), type: .color,
                         defaultValue: .color(RGBAColor(hex: "#4FC3F7") ?? .white)),
             ]
         )

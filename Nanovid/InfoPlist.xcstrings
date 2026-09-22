@@ -1,0 +1,26 @@
+{
+  "sourceLanguage": "ja",
+  "strings": {
+    "NSMicrophoneUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nanovid uses the microphone to record narration and other audio into the timeline."
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Nanovid uses on-device speech recognition to turn the timeline audio into subtitles."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

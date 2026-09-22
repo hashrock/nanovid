@@ -39,7 +39,7 @@ extension EditorStore {
             TextRasterizer.shared.invalidateAll()
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
         } catch {
-            presentError("開けませんでした", error.localizedDescription)
+            presentError(L("開けませんでした"), error.localizedDescription)
         }
     }
 
@@ -51,7 +51,7 @@ extension EditorStore {
             hasUnsavedChanges = false
             return true
         } catch {
-            presentError("保存できませんでした", error.localizedDescription)
+            presentError(L("保存できませんでした"), error.localizedDescription)
             return false
         }
     }
@@ -70,7 +70,7 @@ extension EditorStore {
             NSDocumentController.shared.noteNewRecentDocumentURL(url)
             return true
         } catch {
-            presentError("保存できませんでした", error.localizedDescription)
+            presentError(L("保存できませんでした"), error.localizedDescription)
             return false
         }
     }
@@ -79,11 +79,11 @@ extension EditorStore {
     private func confirmDiscardIfNeeded() -> Bool {
         guard hasUnsavedChanges else { return true }
         let alert = NSAlert()
-        alert.messageText = "保存していない変更があります"
-        alert.informativeText = "変更を保存しますか？"
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "保存しない")
-        alert.addButton(withTitle: "キャンセル")
+        alert.messageText = L("保存していない変更があります")
+        alert.informativeText = L("変更を保存しますか？")
+        alert.addButton(withTitle: L("保存"))
+        alert.addButton(withTitle: L("保存しない"))
+        alert.addButton(withTitle: L("キャンセル"))
         switch alert.runModal() {
         case .alertFirstButtonReturn: return save()
         case .alertSecondButtonReturn: return true

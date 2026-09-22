@@ -138,9 +138,10 @@
 				};
 			};
 			buildConfigurationList = AABBCC00000000000000000A /* Build configuration list for PBXProject "Nanovid" */;
-			developmentRegion = en;
+			developmentRegion = ja;
 			hasScannedForEncodings = 0;
 			knownRegions = (
+				ja,
 				en,
 				Base,
 			);

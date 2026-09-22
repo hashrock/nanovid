@@ -43,10 +43,10 @@ enum PropType: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .string: return "テキスト"
-        case .number: return "数値"
-        case .color: return "色"
-        case .point: return "座標"
+        case .string: return L("テキスト")
+        case .number: return L("数値")
+        case .color: return L("色")
+        case .point: return L("座標")
         case .bool: return "ON/OFF"
         }
     }
@@ -100,15 +100,15 @@ enum Anchor: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .topLeft: return "左上"
-        case .top: return "上"
-        case .topRight: return "右上"
-        case .left: return "左"
-        case .center: return "中央"
-        case .right: return "右"
-        case .bottomLeft: return "左下"
-        case .bottom: return "下"
-        case .bottomRight: return "右下"
+        case .topLeft: return L("左上")
+        case .top: return L("上")
+        case .topRight: return L("右上")
+        case .left: return L("左")
+        case .center: return L("中央")
+        case .right: return L("右")
+        case .bottomLeft: return L("左下")
+        case .bottom: return L("下")
+        case .bottomRight: return L("右下")
         }
     }
 
@@ -157,9 +157,9 @@ enum TextAlign: String, Codable, Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .left: return "左"
-        case .center: return "中央"
-        case .right: return "右"
+        case .left: return L("左")
+        case .center: return L("中央")
+        case .right: return L("右")
         }
     }
 }
@@ -175,7 +175,7 @@ struct FontSpec: Codable, Hashable {
 }
 
 struct TextNodeSpec: Codable, Hashable {
-    var text: ValueRef = .literal(.string("テキスト"))
+    var text: ValueRef = .literal(.string(L("テキスト")))
     var color: ValueRef = .literal(.color(.white))
     var font: FontSpec = FontSpec()
     var align: TextAlign = .center
@@ -206,7 +206,7 @@ enum NodeKind: Codable, Hashable {
 
 struct TemplateNode: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
-    var name: String = "ノード"
+    var name: String = L("ノード")
     var frame: RelFrame = RelFrame()
     var opacity: Double = 1
     var isHidden: Bool = false

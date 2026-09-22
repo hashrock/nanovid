@@ -41,7 +41,7 @@ struct ContentView: View {
             }
         }
         .toolbar { toolbarContent }
-        .navigationTitle(store.project.name + (store.hasUnsavedChanges ? " — 編集中" : ""))
+        .navigationTitle(store.project.name + (store.hasUnsavedChanges ? L(" — 編集中") : ""))
         .sheet(isPresented: $showExport) { ExportView(store: store) }
         .sheet(item: Binding(
             get: { editingTemplateID.map { IdentifiedUUID(id: $0) } },
@@ -174,7 +174,7 @@ struct ContentView: View {
             Task { @MainActor in
                 let ok = await recorder.start(to: url)
                 if !ok, case .denied = recorder.state {
-                    store.buildError = "マイクへのアクセスが許可されていません。システム設定 > プライバシーとセキュリティ > マイク で許可してください。"
+                    store.buildError = L("マイクへのアクセスが許可されていません。システム設定 > プライバシーとセキュリティ > マイク で許可してください。")
                 }
             }
         }
