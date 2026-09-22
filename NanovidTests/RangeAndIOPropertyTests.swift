@@ -82,7 +82,7 @@ func intervalMidpoints(of project: Project, within range: ClosedRange<Double>) -
 @MainActor
 struct CropPropertyTests {
 
-    @Test("切り出しても範囲の中の見え方は変わらない", arguments: 0..<120)
+    @Test("切り出しても範囲の中の見え方は変わらない", arguments: PropertyRuns.seeds(120))
     func cropKeepsWhatYouSee(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0x0C50)
         var project = RandomProject.make(seed: UInt64(seed))
@@ -107,7 +107,7 @@ struct CropPropertyTests {
         }
     }
 
-    @Test("範囲にかからないクリップは残らない", arguments: 0..<120)
+    @Test("範囲にかからないクリップは残らない", arguments: PropertyRuns.seeds(120))
     func cropDropsEverythingOutside(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0x0C51)
         var project = RandomProject.make(seed: UInt64(seed))
@@ -139,7 +139,7 @@ struct CropPropertyTests {
                 "seed \(seed): フェードの長さ (\(longestFade)) を超えてはみ出している (\(slack))")
     }
 
-    @Test("切り出しは 2 度やっても 1 度と同じ", arguments: 0..<120)
+    @Test("切り出しは 2 度やっても 1 度と同じ", arguments: PropertyRuns.seeds(120))
     func cropIsIdempotent(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0x0C52)
         var project = RandomProject.make(seed: UInt64(seed))
@@ -153,7 +153,7 @@ struct CropPropertyTests {
                 "seed \(seed): 2 度切り出すと変わる")
     }
 
-    @Test("切り出したプロジェクトも壊れていない", arguments: 0..<120)
+    @Test("切り出したプロジェクトも壊れていない", arguments: PropertyRuns.seeds(120))
     func cropKeepsProjectValid(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0x0C53)
         var project = RandomProject.make(seed: UInt64(seed))
@@ -172,7 +172,7 @@ struct CropPropertyTests {
 @MainActor
 struct ExtractPropertyTests {
 
-    @Test("抜いたぶんだけ、後ろがちょうど前へ詰まる", arguments: 0..<150)
+    @Test("抜いたぶんだけ、後ろがちょうど前へ詰まる", arguments: PropertyRuns.seeds(150))
     func extractShiftsLaterClipsExactly(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xEE00)
         let runner = EditRunner()
@@ -206,7 +206,7 @@ struct ExtractPropertyTests {
         }
     }
 
-    @Test("抜いたあとも範囲にかかっていたぶんだけ短くなる", arguments: 0..<150)
+    @Test("抜いたあとも範囲にかかっていたぶんだけ短くなる", arguments: PropertyRuns.seeds(150))
     func extractRemovesExactlyTheOverlap(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xEE01)
         let runner = EditRunner()
@@ -241,7 +241,7 @@ struct ExtractPropertyTests {
     /// 見るのは「どの素材のどこが映っているか」まで。不透明度は外す。
     /// 継ぎ目でフェードを切る（head の fadeOut と tail の fadeIn を 0 にする）のは
     /// ExtractCommands.cut の意図した動きで、そこだけは見え方が変わってよい。
-    @Test("抜いても残った部分に映るものは変わらない", arguments: 0..<150)
+    @Test("抜いても残った部分に映るものは変わらない", arguments: PropertyRuns.seeds(150))
     func extractKeepsWhatYouSeeOutsideTheRange(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xEE02)
         let runner = EditRunner()
@@ -272,7 +272,7 @@ struct ExtractPropertyTests {
         }
     }
 
-    @Test("抜いたあともプロジェクトは壊れていない", arguments: 0..<150)
+    @Test("抜いたあともプロジェクトは壊れていない", arguments: PropertyRuns.seeds(150))
     func extractKeepsProjectValid(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0xEE03)
         let runner = EditRunner()
@@ -299,7 +299,7 @@ struct ProjectIOPropertyTests {
         return url
     }
 
-    @Test("保存して読み戻すと同じプロジェクトになる", arguments: 0..<100)
+    @Test("保存して読み戻すと同じプロジェクトになる", arguments: PropertyRuns.seeds(100))
     func roundTripsThroughDisk(seed: Int) throws {
         let project = RandomProject.make(seed: UInt64(seed))
         let directory = try temporaryDirectory()
@@ -316,7 +316,7 @@ struct ProjectIOPropertyTests {
         #expect(reloaded.textTemplates == project.textTemplates, "seed \(seed): テンプレートが変わった")
     }
 
-    @Test("相対パスにしても同じファイルを指す", arguments: 0..<60)
+    @Test("相対パスにしても同じファイルを指す", arguments: PropertyRuns.seeds(60))
     func relativePathsStillPointAtTheSameFile(seed: Int) throws {
         var project = RandomProject.make(seed: UInt64(seed))
         let directory = try temporaryDirectory()

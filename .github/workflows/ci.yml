@@ -1,0 +1,62 @@
+name: CI
+
+# 手元では速い層だけを走らせる（Scripts/test.sh）。重い層と、性質テストの
+# 全部の種はここで回す。
+on:
+  push:
+    paths-ignore:
+      - 'website/**'
+      - '**/*.md'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # SpeechAnalyzer を使うので macOS 26 の SDK が要る。
+      - name: 一番新しい Xcode を選ぶ
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "使う Xcode: $latest"
+          sudo xcode-select -s "$latest"
+          xcodebuild -version
+
+      - name: テスト（重い層も含めて全部）
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -project Nanovid.xcodeproj \
+            -scheme Nanovid \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            -resultBundlePath TestResults.xcresult \
+            TEST_RUNNER_NANOVID_TESTS=all
+
+      # 描画から書き出しまで、GUI なしで通す経路。ここが一番の本番に近い。
+      - name: 書き出しまで通す（--selftest）
+        run: |
+          set -o pipefail
+          products=$(xcodebuild -project Nanovid.xcodeproj -scheme Nanovid \
+            -configuration Debug -showBuildSettings \
+            | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2; exit}')
+          "$products/Nanovid.app/Contents/MacOS/Nanovid" \
+            --selftest "$RUNNER_TEMP/nanovid-selftest"
+
+      - name: 失敗したら結果を残す
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7

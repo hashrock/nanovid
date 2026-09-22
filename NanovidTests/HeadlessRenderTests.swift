@@ -4,6 +4,7 @@ import CoreGraphics
 @testable import Nanovid
 
 /// 実際に描いた絵で確かめる。再生も書き出しも通さない。
+@Suite(.tags(.render), TestTier.heavy)
 @MainActor
 struct HeadlessRenderTests {
 
@@ -147,6 +148,7 @@ struct HeadlessRenderTests {
 ///
 /// モデルの上での「見え方」は OutputRange の性質テストで見ている。
 /// ここはその先、合成まで通した絵が本当に一致するかを見る。
+@Suite(.tags(.render), TestTier.heavy)
 @MainActor
 struct CropRenderPropertyTests {
 

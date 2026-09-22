@@ -69,7 +69,7 @@ struct InstructionPlanPropertyTests {
         return (layers, end, InstructionPlan.segments(for: layers, end: end))
     }
 
-    @Test("区間は先頭から末尾までを隙間なく覆う", arguments: 0..<400)
+    @Test("区間は先頭から末尾までを隙間なく覆う", arguments: PropertyRuns.seeds(400))
     func segmentsTileTheWholeTimeline(seed: Int) {
         let (_, end, segments) = makePlan(seed: seed)
         guard let first = segments.first, let last = segments.last else {
@@ -88,7 +88,7 @@ struct InstructionPlanPropertyTests {
         }
     }
 
-    @Test("レイヤーの切れ目は必ず区間の境目になる", arguments: 0..<400)
+    @Test("レイヤーの切れ目は必ず区間の境目になる", arguments: PropertyRuns.seeds(400))
     func everyLayerEdgeIsABoundary(seed: Int) {
         let (layers, end, segments) = makePlan(seed: seed)
         var boundaries = Set(segments.map(\.range.start))
@@ -103,7 +103,7 @@ struct InstructionPlanPropertyTests {
         }
     }
 
-    @Test("ひとつの区間の中ではレイヤーの構成が変わらない", arguments: 0..<400)
+    @Test("ひとつの区間の中ではレイヤーの構成が変わらない", arguments: PropertyRuns.seeds(400))
     func layersAreConstantWithinASegment(seed: Int) {
         let (layers, _, segments) = makePlan(seed: seed)
         for segment in segments {
@@ -125,7 +125,7 @@ struct InstructionPlanPropertyTests {
         }
     }
 
-    @Test("重なり順は背面から前面へ並ぶ", arguments: 0..<200)
+    @Test("重なり順は背面から前面へ並ぶ", arguments: PropertyRuns.seeds(200))
     func layersAreSortedBackToFront(seed: Int) {
         let (layers, _, segments) = makePlan(seed: seed)
         for segment in segments {
@@ -134,7 +134,7 @@ struct InstructionPlanPropertyTests {
         }
     }
 
-    @Test("レイヤーが無くても全域をひとつの区間で覆う", arguments: 0..<50)
+    @Test("レイヤーが無くても全域をひとつの区間で覆う", arguments: PropertyRuns.seeds(50))
     func emptyTimelineStillHasOneSegment(seed: Int) {
         var generator = SeededGenerator(seed: UInt64(seed) &+ 0x0E0E)
         let clock = PlanGen.Clock(using: &generator)

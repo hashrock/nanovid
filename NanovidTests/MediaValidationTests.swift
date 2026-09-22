@@ -7,6 +7,7 @@ import AVFoundation
 ///
 /// AVPlayer は対応外のコーデックでも readyToPlay を返し、途中で切れたファイルでも
 /// 最後まで時間を進める。どちらもエラーは出ず、画が黒いだけ。だからここで弾く。
+@Suite(.tags(.media), TestTier.heavy)
 struct MediaValidationTests {
 
     /// テストのソースと同じ場所にある素材。バンドルの設定に頼らない。
