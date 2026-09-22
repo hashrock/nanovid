@@ -179,8 +179,7 @@ final class EditorStore {
             let resume = isPlaying
             player.replaceCurrentItem(with: item)
             watchForPlaybackFailure(of: item)
-            await player.seek(to: min(currentTime, built.duration).cmTime,
-                              toleranceBefore: .zero, toleranceAfter: .zero)
+            await seekBounded(to: min(currentTime, built.duration).cmTime)
             if resume { player.play() }
             buildError = nil
         } catch is CancellationError {
@@ -194,6 +193,26 @@ final class EditorStore {
             } else {
                 buildError = error.localizedDescription
             }
+        }
+    }
+
+    /// シークの完了を待つが、待ちすぎない。
+    ///
+    /// seekingWaitsForVideoCompositionRendering を立てていると、完了が二度と
+    /// 呼ばれないことがある（FB9877123。Apple も「想定外の挙動」と認めている）。
+    /// ここで待ち続けると rebuild が戻らず、isBuilding が立ったままになる。
+    /// 普段は数十 ms で済むので、1 秒待って来なければ先へ進む。
+    private func seekBounded(to time: CMTime) async {
+        let player = self.player
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask {
+                await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(1))
+            }
+            await group.next()
+            group.cancelAll()
         }
     }
 
