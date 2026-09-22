@@ -8,6 +8,10 @@ Mac ネイティブの軽量な動画編集ツール。
 - 入力: MP4 / MOV / WAV / MP3 / 画像　出力: MP4 (H.264 / HEVC + AAC)
 - マイク録音あり・画面録画なし
 
+# 設計
+
+https://jam.hashrock.info/p/321ccf26dcde4218b7ec419f3bddebcc
+
 ## ダウンロード
 
 **[Nanovid 0.2.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.2.0/Nanovid-0.2.0.zip)**
