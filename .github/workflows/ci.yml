@@ -32,6 +32,10 @@ jobs:
           sudo xcode-select -s "$latest"
           xcodebuild -version
 
+      # 手元で毎回走るのと同じ経路。速い層だけが緑になることも見張る。
+      - name: テスト（速い層だけ・手元と同じ経路）
+        run: Scripts/test.sh
+
       - name: テスト（重い層も含めて全部）
         run: |
           set -o pipefail
