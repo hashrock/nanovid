@@ -35,6 +35,10 @@ struct NanovidApp: App {
 
     @State private var store = EditorStore()
 
+    /// タイムラインの吸着。切り替えをここに置き、TimelineView とは
+    /// 同じ保存先を読む。ツールバーに絵柄で置くと何のアイコンか伝わりにくい。
+    @AppStorage(TimelineView.snappingKey) private var snappingEnabled = true
+
     var body: some Scene {
         WindowGroup {
             ContentView(store: store)
@@ -112,6 +116,9 @@ struct NanovidApp: App {
                 Divider()
                 Button("1 フレーム戻る (←)") { store.step(frames: -1) }
                 Button("1 フレーム進む (→)") { store.step(frames: 1) }
+                Divider()
+                // ドラッグの最中に ⌥ を押すと、そのあいだだけこの設定と逆になる。
+                Toggle("クリップを吸着させる", isOn: $snappingEnabled)
                 Divider()
                 Button("映像トラックを追加") { store.addTrack(kind: .video) }
                 Button("音声トラックを追加") { store.addTrack(kind: .audio) }

@@ -25,7 +25,8 @@ struct TimelineView: View {
     @State private var scrollBarGrabOffset: Double?
     @State private var verticalBarGrabOffset: Double?
     /// 吸着を効かせるか。プロジェクトではなく端末ごとの好みなので AppStorage で持つ。
-    @AppStorage("nanovid.timeline.snapping") private var snappingEnabled = true
+    /// 切り替えはメニュー（編集操作 > 吸着）から。同じキーをアプリ側でも読む。
+    @AppStorage(TimelineView.snappingKey) private var snappingEnabled = true
 
     @State private var drag: ClipDrag?
     @State private var dropTargetTrack: UUID?
@@ -118,13 +119,6 @@ struct TimelineView: View {
                 .foregroundStyle(.secondary)
 
             Divider().frame(height: 16)
-
-            Toggle(isOn: $snappingEnabled) {
-                // magnet は macOS 26 の SF Symbols に無い。pin で代用する。
-                Label("吸着", systemImage: snappingEnabled ? "pin" : "pin.slash")
-            }
-            .toggleStyle(.button)
-            .help("クリップの端や再生ヘッドへの吸着 (ドラッグ中に ⌥ で一時的に切り替え)")
 
             Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
                 .help("再生ヘッドの位置でクリップを分割 (S)")
@@ -658,6 +652,9 @@ struct TimelineView: View {
     /// フレームから外れた位置は動画として意味がないので、そこは常に丸める。
     ///
     /// - Parameter inverted: ⌥ のように、そのときだけ設定を裏返す指示。
+    /// 吸着の入切を覚えておく場所。アプリのメニューと共有する。
+    static let snappingKey = "nanovid.timeline.snapping"
+
     static func snapThreshold(pixelsPerSecond pps: Double,
                               enabled: Bool, inverted: Bool) -> Double {
         let snapping = inverted ? !enabled : enabled
