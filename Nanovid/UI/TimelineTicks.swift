@@ -117,15 +117,22 @@ enum TimelineScroll {
 enum TimelineSnap {
 
     /// desired に最も近い吸着先を返す。閾値内に無ければフレーム境界へ丸める。
+    ///
+    /// 先にフレーム境界へ丸めてから吸着先を探す。逆にすると、丸めた結果が
+    /// 吸着先の閾値内に入ってしまうことがあり、同じ値を入れ直すたびに
+    /// 「丸め → 吸着」と動き続ける。クリップの端は必ずフレーム境界にあるので、
+    /// この順番なら結果を入れ直しても同じ値のまま止まる。
     static func snap(_ desired: Double, targets: [Double],
                      threshold: Double, frameDuration: Double) -> Double {
+        let rounded = frameDuration > 0
+            ? (desired / frameDuration).rounded() * frameDuration
+            : desired
         if threshold > 0,
-           let near = targets.min(by: { abs($0 - desired) < abs($1 - desired) }),
-           abs(near - desired) < threshold {
+           let near = targets.min(by: { abs($0 - rounded) < abs($1 - rounded) }),
+           abs(near - rounded) < threshold {
             return near
         }
-        guard frameDuration > 0 else { return desired }
-        return (desired / frameDuration).rounded() * frameDuration
+        return rounded
     }
 
     /// ドラッグ中の目標時刻。
@@ -137,7 +144,9 @@ enum TimelineSnap {
     static func resolve(pointerTime: Double, grabOffset: Double,
                         targets: [Double], threshold: Double,
                         frameDuration: Double) -> Double {
-        let desired = pointerTime - grabOffset
+        // 0 より手前は先に切ってから吸着させる。あとで切ると、切った結果が
+        // まだ吸着していない値になり、入れ直すたびに動いてしまう。
+        let desired = max(0, pointerTime - grabOffset)
         return max(0, snap(desired, targets: targets,
                            threshold: threshold, frameDuration: frameDuration))
     }

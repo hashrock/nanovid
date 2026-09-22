@@ -2,10 +2,15 @@ import Foundation
 
 enum Format {
     /// 00:12.15 形式（分:秒.フレーム）。1 時間を超えたら時も出す。
+    ///
+    /// 秒とフレームを別々に出さず、通しのフレーム番号から組み立てる。
+    /// 小数の秒からフレーム数を取ると、27/30 = 0.9 を 30 倍して
+    /// 26.999999999999996 になるような取りこぼしで 1 フレームずれる。
     static func timecode(_ seconds: Double, fps: Int) -> String {
-        let total = max(0, seconds)
-        let whole = Int(total)
-        let frames = Int(((total - Double(whole)) * Double(fps)).rounded(.down))
+        let rate = max(1, fps)
+        let totalFrames = Int((max(0, seconds) * Double(rate)).rounded())
+        let frames = totalFrames % rate
+        let whole = totalFrames / rate
         let h = whole / 3600, m = (whole % 3600) / 60, s = whole % 60
         return h > 0
             ? String(format: "%d:%02d:%02d.%02d", h, m, s, frames)
