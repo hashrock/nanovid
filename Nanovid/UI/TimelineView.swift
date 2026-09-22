@@ -23,6 +23,7 @@ struct TimelineView: View {
     @State private var hoverPoint: CGPoint?
     @State private var wheelMonitor: Any?
     @State private var scrollBarGrabOffset: Double?
+    @State private var verticalBarGrabOffset: Double?
     @State private var drag: ClipDrag?
     @State private var dropTargetTrack: UUID?
     @State private var hoveredClipID: UUID?
@@ -59,8 +60,14 @@ struct TimelineView: View {
             + CGFloat(EditorStore.trailingSlack)
     }
 
+    /// レーンを縦に並べたときの高さ。
+    ///
+    /// 各レーンの下に隙間を入れているが、いちばん下の隙間は数えない。
+    /// 数えると、ちょうど収まる本数でも隙間ぶんだけはみ出したことになり、
+    /// スクロールバーが出っぱなしになる（ホイールもそこへ吸われる）。
     private var lanesHeight: CGFloat {
-        CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap)
+        guard !lanes.isEmpty else { return 0 }
+        return CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap) - Self.laneGap
     }
 
     private var maxScrollX: Double {
@@ -281,6 +288,7 @@ struct TimelineView: View {
             .overlay(alignment: .topLeading) { extractOverlay }
             .overlay(alignment: .topLeading) { playhead }
             .overlay(alignment: .topLeading) { marqueeOverlay }
+            .overlay(alignment: .topTrailing) { verticalScrollBar }
             .background(Color(nsColor: .underPageBackgroundColor))
             // クリップのドラッグはこの空間で測る。クリップ自身は .offset で動くので、
             // ジェスチャをクリップのローカル空間で測ると位置が振動してしまう。
@@ -828,6 +836,45 @@ struct TimelineView: View {
     }
 
     // MARK: - 横スクロールバー
+
+    /// レーンの縦スクロールバー。レーンの右端に浮かせる。
+    ///
+    /// 横と違って行を削れないので、帯を敷かずに重ねる。
+    /// 動かす先が無いときは当たり判定ごと消して、クリップのクリックを奪わない。
+    @ViewBuilder
+    private var verticalScrollBar: some View {
+        let lanesViewport = max(0, Double(viewport.height) - Double(Self.rulerHeight))
+        let trackHeight = max(0, lanesViewport - 8)
+        let ratio = lanesHeight > 0 ? min(1, lanesViewport / Double(lanesHeight)) : 1
+        let thumb = max(28, trackHeight * ratio)
+        let travel = max(0, trackHeight - thumb)
+        let pos = maxScrollY > 0 ? (offsetY / maxScrollY) * travel : 0
+
+        ZStack(alignment: .top) {
+            Capsule().fill(Color.secondary.opacity(0.10))
+            Capsule()
+                .fill(Color.secondary.opacity(verticalBarGrabOffset == nil ? 0.35 : 0.6))
+                .frame(height: thumb)
+                .offset(y: pos)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if verticalBarGrabOffset == nil {
+                                verticalBarGrabOffset = Double(value.startLocation.y) - pos
+                            }
+                            guard travel > 0, let grab = verticalBarGrabOffset else { return }
+                            let newPos = Double(value.location.y) - grab
+                            scrollY = min(max(0, newPos / travel * maxScrollY), maxScrollY)
+                        }
+                        .onEnded { _ in verticalBarGrabOffset = nil }
+                )
+        }
+        .frame(width: 7, height: trackHeight)
+        .padding(.top, Double(Self.rulerHeight) + 4)
+        .padding(.trailing, 3)
+        .opacity(maxScrollY > 0 ? 1 : 0)
+        .allowsHitTesting(maxScrollY > 0)
+    }
 
     private var scrollBar: some View {
         GeometryReader { geo in
