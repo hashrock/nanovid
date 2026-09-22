@@ -84,7 +84,12 @@ else
     else
         STATUS=1
         echo "テストに失敗しました:" >&2
-        grep -E "error:|✘|failed|Failing tests" "$LOG" >&2 || tail -40 "$LOG" >&2
+        # 「Failing tests:」は見出しで、落ちた名前は次の行から並ぶ。1 行ずつ
+        # 拾うと名前が落ちるので後ろも一緒に出す。拾えなかったときのために
+        # 末尾もそのまま出す。
+        grep -A 20 -E "error:|✘|Failing tests" "$LOG" >&2 || true
+        echo "--- ログの末尾 ---" >&2
+        tail -40 "$LOG" >&2
     fi
     rm -f "$LOG"
 fi
