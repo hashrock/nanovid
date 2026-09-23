@@ -377,38 +377,45 @@ struct TimelineWheelTests {
     /// レーンが数 pt しか余っていない状態。6 分の素材を入れた直後がこれ。
     private let tightY = (scrollY: 0.0, maxScrollY: 12.0)
 
-    @Test("縦に動かしきれないぶんは横に回る")
-    func spillsIntoHorizontal() {
-        // 1 ノッチ = 3 行 = 120pt。縦は 12pt しか余っていない。
-        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
-                                    scrollY: tightY.scrollY, maxScrollY: tightY.maxScrollY)
-        #expect(d.dy == 12)
-        #expect(d.dx == 108)
-    }
-
-    @Test("縦を使い切ったあとのホイールは全部が横パンになる")
-    func panesHorizontallyOnceLanesAreAtTheEnd() {
-        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
-                                    scrollY: 12, maxScrollY: 12)
-        #expect(d.dy == 0)
-        #expect(d.dx == 120)
-    }
-
-    @Test("レーンに余裕があるうちは素直に縦だけ動く")
-    func scrollsLanesWhenThereIsRoom() {
+    @Test("マウスホイールは縦だけに効く")
+    func wheelScrollsLanesOnly() {
         let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
                                     scrollY: 0, maxScrollY: 400)
         #expect(d.dy == 120)
         #expect(d.dx == 0)
     }
 
-    @Test("逆向きも同じように振り分ける")
-    func spillsIntoHorizontalWhenScrollingBack() {
-        // 上へ 1 ノッチ。すでに一番上なので縦には使えない。
+    @Test("縦に動かしきれなくても横へは回さない")
+    func wheelDoesNotSpillIntoHorizontal() {
+        // 1 ノッチ = 3 行 = 120pt。縦は 12pt しか余っていないが、横には流さない。
+        // 行き過ぎたぶんは受け取った側が上限で切る。
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
+                                    scrollY: tightY.scrollY, maxScrollY: tightY.maxScrollY)
+        #expect(d.dx == 0)
+        #expect(d.dy == 120)
+    }
+
+    @Test("レーンの端まで来たホイールはそこで止まる")
+    func wheelStopsAtTheEndOfTheLanes() {
+        let d = TimelineWheel.route(deltaX: 0, deltaY: -3, precise: false, shift: false,
+                                    scrollY: 12, maxScrollY: 12)
+        #expect(d.dx == 0)
+        #expect(d.dy == 120)
+    }
+
+    @Test("逆向きも縦だけ")
+    func wheelScrollsBackVerticallyOnly() {
         let d = TimelineWheel.route(deltaX: 0, deltaY: 3, precise: false, shift: false,
                                     scrollY: 0, maxScrollY: 12)
-        #expect(d.dy == 0)
-        #expect(d.dx == -120)
+        #expect(d.dx == 0)
+        #expect(d.dy == -120)
+    }
+
+    @Test("チルトホイールの横入力は拾わない")
+    func wheelIgnoresTilt() {
+        let d = TimelineWheel.route(deltaX: -3, deltaY: 0, precise: false, shift: false,
+                                    scrollY: 0, maxScrollY: 400)
+        #expect(d == (dx: 0, dy: 0))
     }
 
     @Test("⇧ は縦の余りに関わらず横パン固定")
@@ -444,11 +451,13 @@ struct TimelineWheelTests {
         #expect(d == (dx: 0, dy: 0))
     }
 
-    @Test("縦の余りが無いレーンでも 1 ノッチぶん横に動く", arguments: [-3.0, 3.0])
-    func neverDeadWhenLanesFit(delta: Double) {
+    /// レーンが伸びない（maxScrollY が 0）ときでも、横へ逃がしたりはしない。
+    /// ホイールで横へ動かしたいときは ⇧ を使う。
+    @Test("レーンが伸びないときのホイールは横に化けない", arguments: [-3.0, 3.0])
+    func wheelNeverTurnsIntoAPan(delta: Double) {
         let d = TimelineWheel.route(deltaX: 0, deltaY: delta, precise: false, shift: false,
                                     scrollY: 0, maxScrollY: 0)
-        #expect(abs(d.dx) == 120)
-        #expect(d.dy == 0)
+        #expect(d.dx == 0)
+        #expect(abs(d.dy) == 120)
     }
 }

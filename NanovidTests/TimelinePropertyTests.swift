@@ -286,23 +286,47 @@ struct WheelPropertyTests {
                             shift: i.shift, scrollY: i.scrollY, maxScrollY: i.maxScrollY)
     }
 
-    @Test("入力があれば必ずどちらかに動く", arguments: PropertyRuns.seeds(400))
-    func noInputIsSwallowed(seed: Int) {
+    /// 縦の入力は、レーンが伸びなくても ⇧ が押されていても、どこかには出る。
+    /// 消えてよいのはチルトホイールの横入力だけ（マウスホイールは縦に限る）。
+    @Test("縦の入力は消えない", arguments: PropertyRuns.seeds(400))
+    func verticalInputIsNeverSwallowed(seed: Int) {
         let i = input(seed: seed)
-        guard i.deltaX != 0 || i.deltaY != 0 else { return }
+        guard i.deltaY != 0 else { return }
         let d = route(i)
         #expect(abs(d.dx) + abs(d.dy) > 0,
                 "入力 (\(i.deltaX), \(i.deltaY)) が消えた（縦の余白 \(i.maxScrollY)）")
     }
 
-    /// 見るのは縦だけの入力（マウスホイールや二本指の縦スワイプ）。
-    /// 横の入力が混ざっているときは振り分けをせずそのまま通し、
-    /// 行き過ぎぶんは pan 側で切る。
-    @Test("縦だけの入力なら、縦に割り当てるぶんは余白を超えない", arguments: PropertyRuns.seeds(400))
+    @Test("トラックパッドの横入力も消えない", arguments: PropertyRuns.seeds(400))
+    func preciseHorizontalIsNeverSwallowed(seed: Int) {
+        var i = input(seed: seed)
+        i.precise = true
+        guard i.deltaX != 0 else { return }
+        let d = route(i)
+        #expect(abs(d.dx) + abs(d.dy) > 0,
+                "入力 (\(i.deltaX), \(i.deltaY)) が消えた（縦の余白 \(i.maxScrollY)）")
+    }
+
+    /// 歯車の 1 ノッチは 120pt と大きく、レーンの端で横へ飛ぶと操作が乱暴になる。
+    /// ⇧ を押していないマウスホイールは、何があっても横には出さない。
+    @Test("⇧ なしのマウスホイールは横に動かない", arguments: PropertyRuns.seeds(400))
+    func wheelWithoutShiftStaysVertical(seed: Int) {
+        var i = input(seed: seed)
+        i.precise = false
+        i.shift = false
+        #expect(route(i).dx == 0)
+    }
+
+    /// 見るのは二本指の縦スワイプ。横の入力が混ざっているときは振り分けを
+    /// せずそのまま通し、行き過ぎぶんは pan 側で切る。マウスホイールは余りを
+    /// 横へ回さないぶん、縦が余白を超えることがあるのでここでは見ない。
+    @Test("二本指の縦スワイプなら、縦に割り当てるぶんは余白を超えない",
+          arguments: PropertyRuns.seeds(400))
     func verticalNeverExceedsTheRoom(seed: Int) {
         var i = input(seed: seed)
         i.deltaX = 0
         i.shift = false
+        i.precise = true
         let d = route(i)
         let room = d.dy > 0 ? i.maxScrollY - i.scrollY : i.scrollY
         #expect(abs(d.dy) <= max(0, room) + 1e-9,
