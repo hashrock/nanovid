@@ -28,7 +28,11 @@ struct InspectorView: View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader("プロジェクト")
 
-            LabeledContent("解像度") {
+            // ラベルは折り返さない。プリセット名（YouTube HD (1920×1080)）が
+            // 長く、英語の Resolution だとラベル側が潰されて「Resolu-tion」と
+            // 割れていた。パネルが狭いときは代わりにメニューの方を縮める。
+            // 実際の数値はこのすぐ下に別に出るので、切れても分からなくならない。
+            LabeledContent {
                 Menu(currentPresetName) {
                     ForEach(CanvasPresetOption.all) { option in
                         Button(option.name) {
@@ -38,7 +42,9 @@ struct InspectorView: View {
                         }
                     }
                 }
-                .fixedSize()
+                .lineLimit(1)
+            } label: {
+                Text("解像度").lineLimit(1).fixedSize()
             }
 
             LabeledContent("フレームレート") {

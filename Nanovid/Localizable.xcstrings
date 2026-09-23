@@ -1758,10 +1758,11 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Shadow Offset"
+            "value" : "Shadow Y"
           }
         }
-      }
+      },
+      "comment" : "テキストの影の縦方向のずれ。横は触らないので Y と書いてよい。ラベル列は 70pt。"
     },
     "影のぼかし" : {
       "localizations" : {
@@ -2377,10 +2378,11 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Corner Radius"
+            "value" : "Radius"
           }
         }
-      }
+      },
+      "comment" : "矩形レイヤーの角の丸み。図形セクションの中なので短くてよい。ラベル列は 70pt。"
     },
     "解像度" : {
       "comment" : "キャンバスの幅×高さ。",

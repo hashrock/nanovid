@@ -1,5 +1,16 @@
 import SwiftUI
 
+/// ノードのプロパティ欄の、ラベル列の幅。
+///
+/// 日本語は「影のぼかし」の 46pt が最長で 52pt に収まっていたが、英語だと
+/// Shadow Color が 67pt 要る。狭いと折り返して行の高さが揃わなくなるので、
+/// 長い方の言語に合わせてある。溢れたときは折り返さず切る。
+///
+/// 訳がこの幅に収まることは LocalizationTests で見ている。ここに新しい行を
+/// 足したら、あちらのラベル一覧にも足す。
+let templateEditorLabelColumn: CGFloat = 70
+
+
 /// テキストテンプレートのレイアウトを GUI で組む。
 /// ここで決めた配置を、タイムライン上の各インスタンスが props だけ差し替えて使い回す。
 struct TemplateEditorView: View {
@@ -429,7 +440,8 @@ private struct NodeInspector: View {
 
     private func ratioField(_ label: LocalizedStringKey, _ value: Binding<Double>) -> some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption).frame(width: 52, alignment: .leading)
+            Text(label).font(.caption).lineLimit(1)
+                .frame(width: templateEditorLabelColumn, alignment: .leading)
             Slider(value: value, in: -0.5...1.5)
             TextField("", value: value, format: .number.precision(.fractionLength(0...3)))
                 .textFieldStyle(.roundedBorder)
@@ -457,7 +469,8 @@ private struct NodeInspector: View {
                            ))
 
             HStack(spacing: 6) {
-                Text("フォント").font(.caption).frame(width: 52, alignment: .leading)
+                Text("フォント").font(.caption).lineLimit(1)
+                    .frame(width: templateEditorLabelColumn, alignment: .leading)
                 TextField("システム", text: Binding(
                     get: { spec.font.name },
                     set: { v in update { $0.font.name = $1 } (spec, v) }
@@ -578,7 +591,8 @@ private struct NodeInspector: View {
                            range: ClosedRange<Double>,
                            onChange: @escaping (Double) -> Void) -> some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption).frame(width: 52, alignment: .leading)
+            Text(label).font(.caption).lineLimit(1)
+                .frame(width: templateEditorLabelColumn, alignment: .leading)
             Slider(value: Binding(get: { value }, set: onChange), in: range)
             Text(String(format: "%.3g", value))
                 .font(.system(.caption2, design: .monospaced))
@@ -600,7 +614,8 @@ private struct ValueRefEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(label).font(.caption).frame(width: 52, alignment: .leading)
+                Text(label).font(.caption).lineLimit(1)
+                .frame(width: templateEditorLabelColumn, alignment: .leading)
                 Picker("", selection: Binding(
                     get: { value.boundKey ?? "" },
                     set: { key in

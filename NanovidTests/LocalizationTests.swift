@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import AppKit
 @testable import Nanovid
 
 /// 文言まわり。
@@ -117,5 +118,28 @@ struct LocalizationTests {
         let text = TextTemplate.subtitle().props.first { $0.key == "text" }
         #expect(text?.label == "テキスト")
         #expect(text?.defaultValue.stringValue != text?.label)
+    }
+
+    // MARK: - 幅の収まり
+
+    /// テンプレートエディタのプロパティ欄は、ラベル列を固定幅にして行を揃えて
+    /// いる。訳が長いと折り返して行の高さが崩れるので、収まることを見ておく。
+    /// 実際、英語にしたとき Shadow Offset などが 52pt の枠から溢れていた。
+    ///
+    /// TemplateEditorView にラベルを足したら、ここにも足す。
+    @Test("テンプレートエディタのラベルは英語でも列に収まる")
+    func templateEditorLabelsFitTheColumn() throws {
+        let labels = ["X", "Y", "幅", "高さ", "不透明度",
+                      "内容", "文字色", "フォント", "サイズ", "太さ", "行送り",
+                      "縁取り", "縁の色", "影のぼかし", "影のずれ", "影の色",
+                      "塗り", "角丸", "余白 X", "余白 Y"]
+        let english = try Self.bundle("en")
+        let font = NSFont.preferredFont(forTextStyle: .caption1)
+        for label in labels {
+            let translated = english.localizedString(forKey: label, value: label, table: nil)
+            let width = (translated as NSString).size(withAttributes: [.font: font]).width
+            #expect(width <= templateEditorLabelColumn,
+                    "\(label) → \(translated) が \(width)pt で、列の \(templateEditorLabelColumn)pt に入りません")
+        }
     }
 }
