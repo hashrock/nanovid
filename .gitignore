@@ -6,6 +6,9 @@ build/
 DerivedData/
 *.xcuserstate
 xcuserdata/
+# Xcode でプロジェクトを開くと作られる。中身は空の設定だけでビルドには効かない。
+# 追跡すると Xcode を開くたびに作業ツリーが汚れ、Scripts/appstore.sh が止まる。
+Nanovid.xcodeproj/project.xcworkspace/
 *.xcscmblueprint
 *.xccheckout
 *.moved-aside
