@@ -3,6 +3,7 @@
 ビルド不要の静的サイト。`index.html` をブラウザで開いて確認できます。
 
 - `index.html`: ページ本文
+- `privacy.html`: プライバシーポリシー（日本語と英語）。App Store Connect のプライバシーポリシー URL に使う
 - `style.css`: レスポンシブスタイル
 - `assets/`: ロゴとスクリーンショット
 
