@@ -18,7 +18,11 @@ extension EditorStore {
                 continue
             }
             do {
-                made.append(try await AssetCache.shared.inspect(url: url))
+                var asset = try await AssetCache.shared.inspect(url: url)
+                // いまはパネルやドロップで読める。開き直したあとも読めるよう、
+                // ここで bookmark を取っておく（MediaAccess）。
+                asset.bookmark = MediaBookmark.make(for: url)
+                made.append(asset)
             } catch let problem as MediaProblem {
                 // 再生できない形式や、途中で切れたファイル。理由をそのまま出す。
                 buildError = problem.localizedDescription

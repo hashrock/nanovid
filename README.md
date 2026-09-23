@@ -168,6 +168,44 @@ Hardened Runtime を有効にしているので、マイクへのアクセスに
 Debug はアドホック署名のまま。毎回 Developer ID で署名すると遅いのと、
 デバッガを繋ぐのに `get-task-allow` が要るため。
 
+### App Sandbox
+
+Mac App Store に出すには App Sandbox が要る。**Release だけ有効**にしてある
+（`ENABLE_APP_SANDBOX` ほかのビルド設定）。Debug は外してある。テストが
+`#filePath` でリポジトリ内の素材を読み、`--selftest` や `--write-demo` が
+任意のパスに書くので、Sandbox の中だと全部止まる。Release が Sandbox のまま
+であることは CI が見張っている。
+
+Release に入る権限:
+
+| エンタイトルメント | 用途 |
+|---|---|
+| `app-sandbox` | Sandbox そのもの |
+| `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先 |
+| `files.bookmarks.app-scope` | 素材の bookmark（下記） |
+| `assets.movies.read-write` | 録音の置き場（下記） |
+| `device.audio-input` | マイク |
+
+Sandbox の下では、ユーザーが開いた `.nanovid` そのものにしか触れず、隣の素材も
+読めない。そこで取り込んだ時点で素材ごとに security-scoped bookmark を作って
+プロジェクトに保存し（`MediaAsset.bookmark`）、開くときに解決してアクセス権を
+取り戻す（`MediaAccess`）。置き場所は相対パスを優先し、相対パスで読めないときだけ
+bookmark の指す先へ書き換える。フォルダごと複製したときに、元の場所ではなく
+隣の素材を使ってほしいため。
+
+bookmark を持たない以前の版のプロジェクトや、別の Mac から持ってきたプロジェクトを
+開くと、読めない素材の数を出して素材のフォルダを選ぶよう勧める。選んだあと
+保存すれば次からはそのまま開ける。「ファイル > 素材の場所を指定…」からも呼べる。
+
+録音はプロジェクトの隣の `Recordings/` に置くが、Sandbox ではプロジェクトの
+フォルダに書く権利が無いので、書けなければ `~/Movies/Nanovid Recordings/` に置く。
+Sandbox 下の `FileManager` の Movies はコンテナの中を指し、置いてもユーザーから
+見えないので、ホームを自前で引いて本物の `~/Movies` を組み立てている。
+
+`isReadableFile` / `isWritableFile`（access(2)）は POSIX の権限しか見ず、
+Sandbox に拒まれるファイルでも true を返す。読めるか・書けるかは実際に
+開いて・置いてみて確かめている。
+
 ## スクリプト
 
 `Scripts/` にある補助スクリプト。ウィンドウを撮るものだけ macOS の許可が要る。

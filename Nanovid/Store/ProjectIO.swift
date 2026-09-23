@@ -18,6 +18,11 @@ enum ProjectIO {
             var a = asset
             let full = asset.url(relativeTo: base).standardizedFileURL
             if let rel = relativePath(of: full, from: base) { a.path = rel }
+            // 以前の版で取り込んだ素材には bookmark が無い。いま読めるなら作っておく。
+            // 読めないものは作れないので、あるものはそのまま持ち越す。
+            if a.bookmark == nil, MediaAccess.isReachable(full) {
+                a.bookmark = MediaBookmark.make(for: full)
+            }
             return a
         }
         let encoder = JSONEncoder()

@@ -54,6 +54,9 @@ struct NanovidApp: App {
                     .keyboardShortcut("n")
                 Button("開く…") { store.openProject() }
                     .keyboardShortcut("o")
+                Divider()
+                // 開いたときの案内を「あとで」にした場合の入口。
+                Button("素材の場所を指定…") { store.locateMissingMedia() }
             }
             CommandGroup(replacing: .saveItem) {
                 Button("保存") { store.save() }

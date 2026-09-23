@@ -204,6 +204,52 @@
         }
       }
     },
+    "%lld 個の素材は選んだフォルダにありませんでした。" : {
+      "comment" : "上のアラートの本文。見つからなかった素材の数。",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld media file was not in the chosen folder."
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld media files were not in the chosen folder."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld 個の素材を開けません" : {
+      "comment" : "プロジェクトを開いたとき、Sandbox の権限が無いなどで読めない素材の数。アラートの見出し。",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Can't open %lld media file"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "Can't open %lld media files"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "(不明な素材)" : {
       "localizations" : {
         "en" : {
@@ -345,6 +391,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "“%@” cannot be read to the end. The file may be truncated."
+          }
+        }
+      }
+    },
+    "あとで" : {
+      "comment" : "アラートのボタン。何もしないで閉じる。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Later"
           }
         }
       }
@@ -915,6 +972,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Fade"
+          }
+        }
+      }
+    },
+    "フォルダを選ぶ…" : {
+      "comment" : "アラートのボタン。フォルダ選択パネルを開く。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Folder…"
           }
         }
       }
@@ -2155,6 +2223,39 @@
         }
       }
     },
+    "素材の入ったフォルダを選ぶと読めるようになります。選んだあとに保存すると、次からはそのまま開けます。" : {
+      "comment" : "上のアラートの本文。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the folder that contains the media to make it readable. Save afterwards and the project will open without asking next time."
+          }
+        }
+      }
+    },
+    "素材の入ったフォルダを選んでください" : {
+      "comment" : "フォルダ選択パネルの説明文。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose the folder that contains the media"
+          }
+        }
+      }
+    },
+    "素材の場所を指定…" : {
+      "comment" : "ファイルメニュー。読めない素材のフォルダを選び直す。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Locate Media…"
+          }
+        }
+      }
+    },
     "素材を取り除く" : {
       "localizations" : {
         "en" : {
@@ -2352,6 +2453,17 @@
         }
       }
     },
+    "見つからない素材があります" : {
+      "comment" : "選んだフォルダでも見つからなかったときのアラートの見出し。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Some media could not be found"
+          }
+        }
+      }
+    },
     "見出し" : {
       "comment" : "タイトルテンプレートの大きい方の行。レイヤー名と props の表示名。",
       "localizations" : {
@@ -2463,6 +2575,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add"
+          }
+        }
+      }
+    },
+    "選ぶ" : {
+      "comment" : "フォルダ選択パネルの決定ボタン。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose"
           }
         }
       }

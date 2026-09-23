@@ -32,6 +32,13 @@ jobs:
           sudo xcode-select -s "$latest"
           xcodebuild -version
 
+      # App Store に出すビルドは Sandbox が要る。Debug はテストのために外して
+      # あるので、Release の設定が戻っていないことだけ見張る。
+      - name: Release が Sandbox で作られること
+        run: |
+          xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Release \
+            -showBuildSettings 2>/dev/null | grep -q ' ENABLE_APP_SANDBOX = YES'
+
       # L() でくるんだ文言は Xcode の抽出に載らないので、機械で見張る。
       # Scripts/test.sh からも走るが、落ちた理由がすぐ分かるよう単体でも出す。
       - name: 文言カタログの検査

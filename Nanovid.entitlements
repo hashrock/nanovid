@@ -6,5 +6,12 @@
 	     ナレーションの録音で使う。 -->
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
+	<!-- 素材ごとに app-scoped の security-scoped bookmark を作り、開き直したときに
+	     アクセス権を取り戻す（MediaAccess）。Sandbox の外では効かないだけで害は無い。
+	     Sandbox そのものと、ユーザーが選んだファイル・ムービーフォルダへの権限は
+	     Release のビルド設定（ENABLE_APP_SANDBOX ほか）から入る。Debug は
+	     テストや --selftest がリポジトリや任意のパスを読み書きするので Sandbox の外。 -->
+	<key>com.apple.security.files.bookmarks.app-scope</key>
+	<true/>
 </dict>
 </plist>

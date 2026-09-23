@@ -28,6 +28,10 @@ struct MediaAsset: Identifiable, Codable, Hashable {
     var naturalSize: CGSize?
     var hasAudio: Bool
     var hasVideo: Bool
+    /// App Sandbox の下で開き直したときに、この素材を読めるようにするための
+    /// security-scoped bookmark。取り込んだときに作り、プロジェクトと一緒に保存する。
+    /// 古いプロジェクトには無い（そのときは path だけで探す）。MediaAccess を参照。
+    var bookmark: Data? = nil
 
     /// - Parameter base: プロジェクトファイルのあるディレクトリ。
     ///   URL(fileURLWithPath:relativeTo:) は base の末尾スラッシュの有無で
