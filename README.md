@@ -206,6 +206,40 @@ Sandbox 下の `FileManager` の Movies はコンテナの中を指し、置い�
 Sandbox に拒まれるファイルでも true を返す。読めるか・書けるかは実際に
 開いて・置いてみて確かめている。
 
+### Mac App Store
+
+```sh
+Scripts/appstore.sh                 # Archive して App Store 向けの .pkg を書き出す
+Scripts/appstore.sh --archive-only  # Archive と検査だけ（Apple とは通信しない）
+```
+
+`dist/appstore/` に `.xcarchive` と `.pkg` ができる。アップロードはしないので、
+`.pkg` を Transporter に渡すか、`.xcarchive` をダブルクリックして Xcode の
+Organizer から送る。
+
+前もって一度だけ、Xcode の Settings > Accounts にチームのアカウントを入れ、
+App Store Connect に Bundle ID `com.hashrock.nanovid` のアプリを作っておく。
+配布用の証明書とプロビジョニングプロファイルは、書き出しのときに Xcode が
+用意する（`-allowProvisioningUpdates`）。Archive は Developer ID と同じ Release
+構成で作り、書き出しのときに App Store 用の署名に掛け直す。
+
+ビルド番号はコミット数を使う。App Store Connect は同じ版の中で番号が増えて
+いないと受け付けないため。未コミットの変更があると、同じ番号で中身の違う
+ものができるので止まる。
+
+送る前に、審査やアップロードで弾かれるものを見る。App Sandbox、デバッグ用の
+`get-task-allow` が無いこと、Privacy manifest、暗号化の申告、マイクと音声認識の
+用途説明とその英訳、アプリのカテゴリ。
+
+App Store 向けに入れてあるもの:
+
+- `Nanovid/PrivacyInfo.xcprivacy` — 通信せず、データを集めず、トラッキングも
+  しない。理由の申告が要る API は UserDefaults（`@AppStorage`）だけ。ファイルの
+  日時・起動からの時間・ディスクの空き容量などに当たる API を新しく使うときは
+  ここにも足す（ITMS-91053）。
+- `ITSAppUsesNonExemptEncryption = NO` — 暗号化を使っていないので、提出のたびに
+  輸出規制の質問に答えずに済む。
+
 ## スクリプト
 
 `Scripts/` にある補助スクリプト。ウィンドウを撮るものだけ macOS の許可が要る。
@@ -219,6 +253,9 @@ Scripts/make-appicon.sh
 
 # 配布用に署名してビルドする
 Scripts/release.sh
+
+# Mac App Store に出す .pkg を作る
+Scripts/appstore.sh
 
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png

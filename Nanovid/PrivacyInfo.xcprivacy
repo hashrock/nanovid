@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  App Store の Privacy manifest。
+
+  nanovid は通信せず、データを集めず、トラッキングもしない。書き起こしも
+  端末内の音声認識で済む。申告が要るのは「理由の申告が要る API」のうち
+  UserDefaults だけ（@AppStorage でタイムラインの吸着の入り切りを覚えている）。
+
+  理由の申告が要る API を新しく使うときはここにも足す。ファイルの日時
+  （creationDate / modificationDate / attributesOfItem / stat など）、起動からの
+  時間（systemUptime / mach_absolute_time）、ディスクの空き容量、使える
+  キーボードの一覧が当たる。サイズだけなら URLResourceValues.fileSize で引けば
+  当たらない。
+-->
+<plist version="1.0">
+<dict>
+	<key>NSPrivacyTracking</key>
+	<false/>
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- アプリ自身が書いた値を、アプリ自身が読む。 -->
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

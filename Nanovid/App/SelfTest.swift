@@ -491,7 +491,9 @@ enum SelfTest {
                 let vt = try await asset.loadTracks(withMediaType: .video).first
                 let at = try await asset.loadTracks(withMediaType: .audio).first
                 let size = try await vt?.load(.naturalSize) ?? .zero
-                let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+                // attributesOfItem は日時も返すので、App Store の「理由の申告が要る API」
+                // （ファイルの日時）に当たる。サイズしか使わないので fileSize で引く。
+                let bytes = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
                 let took = exportSeconds[url] ?? 0
                 let speed = took > 0 ? d / took : 0
                 line = String(format: "  %@  %.2fs  %.0fx%.0f  audio=%@  %d KB  (%.1f 秒, %.1f 倍速)",
