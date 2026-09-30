@@ -107,6 +107,7 @@ final class Transcriber {
     func transcribe(project: Project,
                     baseURL: URL?,
                     locale: Locale,
+                    confirmDownload: @escaping @Sendable () async -> Bool = { true },
                     progress: @escaping @Sendable (SubtitleProgress) -> Void) async throws -> [TranscribedWord] {
 
         progress(SubtitleProgress(phase: .preparing, fraction: nil))
@@ -128,6 +129,8 @@ final class Transcriber {
             throw TranscriptionError.unsupportedLocale(locale.identifier)
         default:
             if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+                // 数百 MB になることがあるので、黙って取り寄せず先に断る。
+                guard await confirmDownload() else { throw CancellationError() }
                 // 初回は数百 MB 取り寄せることがある。何も出さないと固まって見える。
                 progress(SubtitleProgress(phase: .downloadingModel, fraction: nil))
                 let watching = Self.watch(request.progress) { fraction in

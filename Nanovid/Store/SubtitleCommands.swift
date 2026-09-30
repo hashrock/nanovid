@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// 字幕の自動生成。
@@ -28,7 +29,8 @@ extension EditorStore {
 
         do {
             let words = try await worker.transcribe(
-                project: project, baseURL: baseURL, locale: locale
+                project: project, baseURL: baseURL, locale: locale,
+                confirmDownload: { await MainActor.run { Self.confirmModelDownload(locale: locale) } }
             ) { value in
                 Task { @MainActor [weak self] in self?.subtitleProgress = value }
             }
@@ -39,9 +41,24 @@ extension EditorStore {
                 return
             }
             applySubtitles(lines, templateID: templateID)
+        } catch is CancellationError {
+            // 言語モデルの取り寄せを断られた。何もしない。
         } catch {
             buildError = error.localizedDescription
         }
+    }
+
+    /// 言語モデルを取り寄せてよいか聞く。取り寄せは OS が行い、大きさは前もって
+    /// 分からないので、目安だけ伝える。
+    @MainActor
+    static func confirmModelDownload(locale: Locale) -> Bool {
+        let name = locale.localizedString(forIdentifier: locale.identifier) ?? locale.identifier
+        let alert = NSAlert()
+        alert.messageText = L("\(name)の言語モデルをダウンロードしますか？")
+        alert.informativeText = L("字幕の自動生成には、端末内で使う言語モデルが必要です。初回だけ、数百 MB ほどのダウンロードが行われることがあります。")
+        alert.addButton(withTitle: L("ダウンロード"))
+        alert.addButton(withTitle: L("キャンセル"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func cancelSubtitleGeneration() {

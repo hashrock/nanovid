@@ -34,6 +34,17 @@
         }
       }
     },
+    "%@の言語モデルをダウンロードしますか？" : {
+      "comment" : "%@ は言語名。字幕の自動生成で、言語モデルを取り寄せる前の確認。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download the %@ language model?"
+          }
+        }
+      }
+    },
     "%lld Mbps · 約 %@" : {
       "comment" : "%lld はビットレート、%@ は見積もりファイルサイズ（\"12.3 MB\" など）。",
       "localizations" : {
@@ -818,6 +829,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Transcribe the timeline audio on this Mac and turn it into subtitles"
+          }
+        }
+      }
+    },
+    "ダウンロード" : {
+      "comment" : "言語モデルを取り寄せる前の確認のボタン。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download"
           }
         }
       }
@@ -1732,6 +1754,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Automatic subtitles require macOS 26 or later."
+          }
+        }
+      }
+    },
+    "字幕の自動生成には、端末内で使う言語モデルが必要です。初回だけ、数百 MB ほどのダウンロードが行われることがあります。" : {
+      "comment" : "言語モデルを取り寄せる前の確認の説明文。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Automatic subtitles need an on-device language model. The first time, this may download several hundred megabytes."
           }
         }
       }
