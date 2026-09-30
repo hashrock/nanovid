@@ -35,6 +35,9 @@ struct NanovidApp: App {
 
     @State private var store = EditorStore()
 
+    /// ヘルプメニューから開くページ。
+    static let supportURL = URL(string: "https://hashrock.github.io/nanovid/")!
+
     /// タイムラインの吸着。切り替えをここに置き、TimelineView とは
     /// 同じ保存先を読む。ツールバーに絵柄で置くと何のアイコンか伝わりにくい。
     @AppStorage(TimelineView.snappingKey) private var snappingEnabled = true
@@ -63,6 +66,10 @@ struct NanovidApp: App {
                     .keyboardShortcut("s")
                 Button("別名で保存…") { store.saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+            // 何も置かないと「ヘルプは利用できません」と出るだけの項目が残る。
+            CommandGroup(replacing: .help) {
+                Button("Nanovid のサポート") { NSWorkspace.shared.open(Self.supportURL) }
             }
             CommandGroup(replacing: .undoRedo) {
                 Button("取り消す") { store.undo() }

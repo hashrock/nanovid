@@ -352,6 +352,17 @@
         }
       }
     },
+    "Nanovid のサポート" : {
+      "comment" : "ヘルプメニュー。サポートのページをブラウザで開く。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nanovid Support"
+          }
+        }
+      }
+    },
     "ON/OFF" : {
       "comment" : "props の型名（真偽値）。訳さずそのままでよい。",
       "localizations" : {
