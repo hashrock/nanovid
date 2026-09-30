@@ -34,6 +34,7 @@ struct NanovidApp: App {
     }
 
     @State private var store = EditorStore()
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// ヘルプメニューから開くページ。
     static let supportURL = URL(string: "https://hashrock.github.io/nanovid/")!
@@ -43,10 +44,13 @@ struct NanovidApp: App {
     @AppStorage(TimelineView.snappingKey) private var snappingEnabled = true
 
     var body: some Scene {
-        WindowGroup {
+        // 1 プロジェクトを 1 つの窓で編集する作り。窓を閉じたら終了する
+        // （AppDelegate）。終了を取りやめたときに開き直せるよう id を付ける。
+        WindowGroup(id: AppDelegate.mainWindowID) {
             ContentView(store: store)
                 .frame(minWidth: 1100, minHeight: 700)
                 .onAppear(perform: openProjectFromArguments)
+                .modifier(AppDelegateLink(delegate: appDelegate, store: store))
         }
         // テスト中は最初の窓を開かせない。
         .defaultLaunchBehavior(Self.isRunningTests ? .suppressed : .presented)
@@ -62,6 +66,10 @@ struct NanovidApp: App {
                 Button("素材の場所を指定…") { store.locateMissingMedia() }
             }
             CommandGroup(replacing: .saveItem) {
+                // .saveItem を置き換えると標準の「閉じる」も消えるので置き直す。
+                // 窓を閉じると終了する（AppDelegate）。
+                Button("閉じる") { NSApp.keyWindow?.performClose(nil) }
+                    .keyboardShortcut("w")
                 Button("保存") { store.save() }
                     .keyboardShortcut("s")
                 Button("別名で保存…") { store.saveAs() }
@@ -133,6 +141,53 @@ struct NanovidApp: App {
                 Button("映像トラックを追加") { store.addTrack(kind: .video) }
                 Button("音声トラックを追加") { store.addTrack(kind: .audio) }
             }
+        }
+    }
+}
+
+/// 窓を閉じたら終了し、終了の前に未保存の変更を確かめる。
+///
+/// 窓を閉じたあと開き直す手段が無い、と App Review で指摘された（Guideline 4）。
+/// 1 プロジェクト 1 窓なので、閉じたら終了にする。
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    static let mainWindowID = "main"
+
+    /// 窓が出たときに AppDelegateLink が渡す。
+    weak var store: EditorStore?
+    var reopenMainWindow: (() -> Void)?
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        !NanovidApp.isRunningTests
+    }
+
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let store else { return .terminateNow }
+        if store.confirmDiscardIfNeeded() { return .terminateNow }
+        reopenIfNeeded()
+        return .terminateCancel
+    }
+
+    /// 窓を閉じて終了しかけたところで取りやめたら、窓を戻す。
+    /// 編集中の内容は store に残っているので、そのまま続きから。
+    @MainActor
+    private func reopenIfNeeded() {
+        let hasWindow = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
+        if !hasWindow { reopenMainWindow?() }
+    }
+}
+
+/// SwiftUI 側の store と openWindow を AppDelegate へ渡す。
+private struct AppDelegateLink: ViewModifier {
+    let delegate: AppDelegate
+    let store: EditorStore
+    @Environment(\.openWindow) private var openWindow
+
+    func body(content: Content) -> some View {
+        content.onAppear {
+            delegate.store = store
+            delegate.reopenMainWindow = { openWindow(id: AppDelegate.mainWindowID) }
         }
     }
 }

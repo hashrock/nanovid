@@ -138,7 +138,7 @@ extension EditorStore {
     }
 
     /// 未保存の変更があるときだけ確認する。続行してよければ true。
-    private func confirmDiscardIfNeeded() -> Bool {
+    func confirmDiscardIfNeeded() -> Bool {
         guard hasUnsavedChanges else { return true }
         let alert = NSAlert()
         alert.messageText = L("保存していない変更があります")
