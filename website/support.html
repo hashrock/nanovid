@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#fafafa">
+  <title>サポート — nanovid</title>
+  <meta name="description" content="nanovid への問い合わせ先と、よくある質問。">
+  <link rel="icon" href="./assets/nanovid.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <header class="header wrap">
+    <a class="brand" href="./" aria-label="nanovid ホーム"><img src="./assets/nanovid.svg" width="36" height="36" alt=""><span>nanovid</span></a>
+    <a class="github" href="#en" lang="en">English <span aria-hidden="true">↓</span></a>
+  </header>
+  <main class="policy wrap">
+
+    <article id="ja" lang="ja">
+      <h1>サポート</h1>
+
+      <p class="lead">質問や不具合の報告は <a class="link" href="https://github.com/hashrock/nanovid/issues">GitHub の Issues</a> で受け付けています。</p>
+
+      <h2>問い合わせるとき</h2>
+      <p>次のことを書いてもらえると、早く調べられます。</p>
+      <dl>
+        <dt>アプリの版</dt>
+        <dd>メニューの「nanovid ＞ nanovid について」に出ています。</dd>
+        <dt>macOS の版</dt>
+        <dd>「アップル メニュー ＞ この Mac について」に出ています。</dd>
+        <dt>起きたことと、その手順</dt>
+        <dd>何をしたら、何が起きたか。画面の写真があるとなおよいです。</dd>
+      </dl>
+
+      <h2>動作環境</h2>
+      <p>macOS 15 以降。字幕の自動生成は macOS 26 以降で使えます。</p>
+
+      <h2>よくある質問</h2>
+      <dl>
+        <dt>録音したファイルはどこにありますか？</dt>
+        <dd>プロジェクトの隣の「Recordings」フォルダか、「ムービー」フォルダの「Nanovid Recordings」に WAV ファイルで保存しています。</dd>
+        <dt>「素材を開けません」と出ます。</dt>
+        <dd>素材を動かしたか、別の Mac から持ってきたプロジェクトです。「ファイル ＞ 素材の場所を指定…」で素材の入ったフォルダを選び、保存し直すと、次からはそのまま開けます。</dd>
+        <dt>字幕の自動生成でダウンロードの確認が出ます。</dt>
+        <dd>書き起こしに使う言語モデルを、macOS が Apple から取り寄せます。言語ごとに初回だけで、数百 MB になることがあります。書き起こしは Mac の中で行い、音声は外部へ送りません。</dd>
+        <dt>窓を閉じるとアプリが終了します。</dt>
+        <dd>nanovid は 1 つの窓で 1 つのプロジェクトを編集するアプリなので、窓を閉じると終了します。保存していない変更があれば、終了する前に確認します。</dd>
+      </dl>
+
+      <h2>プライバシー</h2>
+      <p>nanovid はあなたの情報を集めず、インターネットにも接続しません。詳しくは<a class="link" href="./privacy.html">プライバシーポリシー</a>をご覧ください。</p>
+    </article>
+
+    <article id="en" lang="en">
+      <h1>Support</h1>
+
+      <p class="lead">For questions and bug reports, please use <a class="link" href="https://github.com/hashrock/nanovid/issues">GitHub Issues</a>.</p>
+
+      <h2>When you contact us</h2>
+      <p>Including the following helps us look into it quickly.</p>
+      <dl>
+        <dt>App version</dt>
+        <dd>Shown in nanovid › About nanovid.</dd>
+        <dt>macOS version</dt>
+        <dd>Shown in Apple menu › About This Mac.</dd>
+        <dt>What happened, and how</dt>
+        <dd>What you did and what happened. A screenshot helps too.</dd>
+      </dl>
+
+      <h2>Requirements</h2>
+      <p>macOS 15 or later. Automatic subtitles require macOS 26 or later.</p>
+
+      <h2>FAQ</h2>
+      <dl>
+        <dt>Where are my recordings?</dt>
+        <dd>They are saved as WAV files in a “Recordings” folder next to the project, or in “Nanovid Recordings” in your Movies folder.</dd>
+        <dt>The app says it can’t open some media.</dt>
+        <dd>The media was moved, or the project came from another Mac. Choose File › Locate Media… and select the folder that contains the media, then save the project. It will open as is next time.</dd>
+        <dt>Automatic subtitles ask to download something.</dt>
+        <dd>macOS downloads the language model used for transcription from Apple. This happens only the first time for each language and may be several hundred megabytes. Transcription runs on your Mac, and your audio is not sent anywhere.</dd>
+        <dt>Closing the window quits the app.</dt>
+        <dd>nanovid edits one project in one window, so closing the window quits the app. If there are unsaved changes, it asks before quitting.</dd>
+      </dl>
+
+      <h2>Privacy</h2>
+      <p>nanovid does not collect your information and does not connect to the internet. See the <a class="link" href="./privacy.html#en">Privacy Policy</a> for details.</p>
+    </article>
+
+  </main>
+  <footer class="footer wrap"><a href="./">nanovid</a><a href="https://github.com/hashrock">Made by hashrock <span aria-hidden="true">↗</span></a></footer>
+</body>
+</html>

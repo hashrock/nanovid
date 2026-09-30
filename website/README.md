@@ -4,6 +4,7 @@
 
 - `index.html`: ページ本文
 - `privacy.html`: プライバシーポリシー（日本語と英語）。App Store Connect のプライバシーポリシー URL に使う
+- `support.html`: 問い合わせ先とよくある質問（日本語と英語）。App Store Connect のサポート URL に使う
 - `style.css`: レスポンシブスタイル
 - `assets/`: ロゴとスクリーンショット
 
