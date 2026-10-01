@@ -8,11 +8,16 @@
   <meta name="description" content="nanovid はあなたの情報を集めません。通信もトラッキングもしないアプリです。">
   <link rel="icon" href="./assets/nanovid.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
+  <script type="module" src="https://repos.hashrock.info/switcher/v1.js"></script>
 </head>
 <body>
   <header class="header wrap">
     <a class="brand" href="./" aria-label="nanovid ホーム"><img src="./assets/nanovid.svg" width="36" height="36" alt=""><span>nanovid</span></a>
     <a class="github" href="#en" lang="en">English <span aria-hidden="true">↓</span></a>
+    <!-- hashrock の他のサービスへのメニュー。ヘッダの右端に置き場所があるので浮かせずに並べる
+         （floating だと狭い画面で右のリンクと重なる）。ページは明るい配色で固定
+         (color-scheme: light) なので、OS の設定によらず light に揃える -->
+    <hashrock-switcher theme="light"></hashrock-switcher>
   </header>
   <main class="policy wrap">
 
