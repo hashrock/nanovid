@@ -10,7 +10,11 @@ final class EditorStore {
     // MARK: 状態
 
     var project: Project {
-        didSet { if project != oldValue { scheduleRebuild() } }
+        didSet {
+            guard project != oldValue else { return }
+            hasUnsavedChanges = true
+            scheduleRebuild()
+        }
     }
     var documentURL: URL?
     var hasUnsavedChanges = false
@@ -141,8 +145,8 @@ final class EditorStore {
     // MARK: コンポジションの再構築
 
     /// 編集のたびに呼ばれる。連続操作でまとめて 1 回だけ組み直す。
+    /// 起動直後の最初の組み立てでも呼ぶので、ここでは「変更あり」にしない。
     private func scheduleRebuild() {
-        hasUnsavedChanges = true
         buildGeneration += 1
         let generation = buildGeneration
         rebuildTask?.cancel()

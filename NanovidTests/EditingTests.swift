@@ -261,6 +261,17 @@ struct EditingTests {
         #expect(!store.canUndo)
     }
 
+    @Test("開いただけでは未保存にならず、編集すると未保存になる")
+    func freshStoreIsNotDirty() {
+        let (store, _, clipID) = makeStore()
+        #expect(!store.hasUnsavedChanges, "何もしていないのに閉じるときに確認が出てしまう")
+
+        store.selectedClipIDs = [clipID]
+        store.currentTime = 2
+        store.splitAtPlayhead()
+        #expect(store.hasUnsavedChanges)
+    }
+
     @Test("文字入力のような連続編集は 1 つの undo にまとまる")
     func coalescedEditsCollapseIntoOneUndo() {
         var project = Project.starter()
