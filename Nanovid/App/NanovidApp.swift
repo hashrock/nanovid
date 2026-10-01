@@ -45,8 +45,8 @@ struct NanovidApp: App {
 
     var body: some Scene {
         // 1 プロジェクトを 1 つの窓で編集する作り。窓を閉じたら終了する
-        // （AppDelegate）。終了を取りやめたときに開き直せるよう id を付ける。
-        WindowGroup(id: AppDelegate.mainWindowID) {
+        // （AppDelegate）。
+        WindowGroup {
             ContentView(store: store)
                 .frame(minWidth: 1100, minHeight: 700)
                 .onAppear(perform: openProjectFromArguments)
@@ -145,17 +145,22 @@ struct NanovidApp: App {
     }
 }
 
-/// 窓を閉じたら終了し、終了の前に未保存の変更を確かめる。
+/// 窓を閉じたら終了し、閉じる・終了する前に未保存の変更を確かめる。
 ///
 /// 窓を閉じたあと開き直す手段が無い、と App Review で指摘された（Guideline 4）。
 /// 1 プロジェクト 1 窓なので、閉じたら終了にする。
+///
+/// 確認は窓を閉じる前に、その窓へシートで出す（標準の書類アプリと同じ）。
+/// キャンセルなら窓はそのまま残る。
 final class AppDelegate: NSObject, NSApplicationDelegate {
-
-    static let mainWindowID = "main"
 
     /// 窓が出たときに AppDelegateLink が渡す。
     weak var store: EditorStore?
-    var reopenMainWindow: (() -> Void)?
+    private weak var mainWindow: NSWindow?
+    private var closeGuard: WindowCloseGuard?
+
+    /// 窓を閉じる確認が済んだ。続く終了で同じことを聞き直さない。
+    private var discardConfirmed = false
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         !NanovidApp.isRunningTests
@@ -163,31 +168,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @MainActor
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard let store else { return .terminateNow }
-        if store.confirmDiscardIfNeeded() { return .terminateNow }
-        reopenIfNeeded()
-        return .terminateCancel
+        guard let store, !discardConfirmed, store.hasUnsavedChanges else { return .terminateNow }
+        guard let window = mainWindow, window.isVisible else {
+            return store.confirmDiscardIfNeeded() ? .terminateNow : .terminateCancel
+        }
+        // 閉じる確認のシートが出ているあいだの ⌘Q は、そちらに任せる。
+        if window.attachedSheet != nil { return .terminateCancel }
+        store.confirmDiscardIfNeeded(in: window) { ok in
+            sender.reply(toApplicationShouldTerminate: ok)
+        }
+        return .terminateLater
     }
 
-    /// 窓を閉じて終了しかけたところで取りやめたら、窓を戻す。
-    /// 編集中の内容は store に残っているので、そのまま続きから。
+    /// メインの窓の delegate を包み、閉じる前の確認を差し込む。
     @MainActor
-    private func reopenIfNeeded() {
-        let hasWindow = NSApp.windows.contains { $0.isVisible && $0.canBecomeMain }
-        if !hasWindow { reopenMainWindow?() }
+    func attach(_ window: NSWindow) {
+        guard window !== mainWindow else { return }
+        mainWindow = window
+        let guard_ = WindowCloseGuard(wrapping: window.delegate) { [weak self] window in
+            self?.shouldClose(window) ?? true
+        }
+        closeGuard = guard_
+        window.delegate = guard_
+    }
+
+    @MainActor
+    private func shouldClose(_ window: NSWindow) -> Bool {
+        guard let store, !discardConfirmed, store.hasUnsavedChanges else { return true }
+        store.confirmDiscardIfNeeded(in: window) { [weak self] ok in
+            guard ok else { return }
+            self?.discardConfirmed = true
+            window.close()
+        }
+        return false
     }
 }
 
-/// SwiftUI 側の store と openWindow を AppDelegate へ渡す。
+/// 窓の delegate を包んで windowShouldClose だけ差し替える。
+/// ほかの知らせはもとの delegate（SwiftUI のもの）へそのまま流す。
+private final class WindowCloseGuard: NSObject, NSWindowDelegate {
+    private weak var original: NSWindowDelegate?
+    private let shouldClose: (NSWindow) -> Bool
+
+    init(wrapping original: NSWindowDelegate?, shouldClose: @escaping (NSWindow) -> Bool) {
+        self.original = original
+        self.shouldClose = shouldClose
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard shouldClose(sender) else { return false }
+        return original?.windowShouldClose?(sender) ?? true
+    }
+
+    override func responds(to aSelector: Selector!) -> Bool {
+        super.responds(to: aSelector) || original?.responds(to: aSelector) == true
+    }
+
+    override func forwardingTarget(for aSelector: Selector!) -> Any? {
+        original?.responds(to: aSelector) == true ? original : super.forwardingTarget(for: aSelector)
+    }
+}
+
+/// SwiftUI 側の store と窓を AppDelegate へ渡す。
 private struct AppDelegateLink: ViewModifier {
     let delegate: AppDelegate
     let store: EditorStore
-    @Environment(\.openWindow) private var openWindow
 
     func body(content: Content) -> some View {
-        content.onAppear {
-            delegate.store = store
-            delegate.reopenMainWindow = { openWindow(id: AppDelegate.mainWindowID) }
+        content
+            .onAppear { delegate.store = store }
+            .background(WindowReader { delegate.attach($0) })
+    }
+}
+
+/// 自分が載っている NSWindow を知らせる。
+private struct WindowReader: NSViewRepresentable {
+    let onWindow: (NSWindow) -> Void
+
+    func makeNSView(context: Context) -> NSView { ReaderView(onWindow: onWindow) }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private final class ReaderView: NSView {
+        let onWindow: (NSWindow) -> Void
+        init(onWindow: @escaping (NSWindow) -> Void) {
+            self.onWindow = onWindow
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if let window { onWindow(window) }
         }
     }
 }

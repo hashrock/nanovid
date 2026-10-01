@@ -140,13 +140,30 @@ extension EditorStore {
     /// 未保存の変更があるときだけ確認する。続行してよければ true。
     func confirmDiscardIfNeeded() -> Bool {
         guard hasUnsavedChanges else { return true }
+        return handleDiscardResponse(Self.discardAlert().runModal())
+    }
+
+    /// confirmDiscardIfNeeded の、窓にシートで出す版。窓を閉じる・終了するときに
+    /// 使う。窓は閉じずに残したまま聞き、続行してよければ true を渡す。
+    func confirmDiscardIfNeeded(in window: NSWindow, completion: @escaping (Bool) -> Void) {
+        guard hasUnsavedChanges else { return completion(true) }
+        Self.discardAlert().beginSheetModal(for: window) { response in
+            completion(self.handleDiscardResponse(response))
+        }
+    }
+
+    private static func discardAlert() -> NSAlert {
         let alert = NSAlert()
         alert.messageText = L("保存していない変更があります")
         alert.informativeText = L("変更を保存しますか？")
         alert.addButton(withTitle: L("保存"))
         alert.addButton(withTitle: L("保存しない"))
         alert.addButton(withTitle: L("キャンセル"))
-        switch alert.runModal() {
+        return alert
+    }
+
+    private func handleDiscardResponse(_ response: NSApplication.ModalResponse) -> Bool {
+        switch response {
         case .alertFirstButtonReturn: return save()
         case .alertSecondButtonReturn: return true
         default: return false
