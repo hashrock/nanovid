@@ -1,6 +1,15 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="website/assets/nanovid-white.svg">
+    <img src="website/assets/nanovid.svg" alt="" width="96">
+  </picture>
+</p>
+
 # nanovid
 
 Mac ネイティブの軽量な動画編集ツール。
+
+![nanovid の編集画面。プレビュー、右のインスペクタ、下のタイムラインにテロップと映像のクリップが並ぶ](website/assets/screenshot.png)
 
 - **トラック／レイヤー式**・**非破壊** — 元ファイルは一切書き換えない
 - **中間ファイルを作らない** — 編集結果は `AVMutableComposition` とカスタムコンポジタ上にだけ存在し、実ファイルになるのは書き出しの瞬間だけ
