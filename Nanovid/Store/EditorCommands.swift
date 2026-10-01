@@ -43,8 +43,16 @@ extension EditorStore {
     func importAndAppend(urls: [URL]) async {
         let assets = await importAssets(urls: urls)
         guard !assets.isEmpty else { return }
+        appendAtEnd(assets)
+    }
+
+    /// 取り込んだ素材を、種類の合うトラックの末尾に並べる。置いたクリップの ID を返す。
+    @discardableResult
+    func appendAtEnd(_ assets: [MediaAsset]) -> [UUID] {
+        guard !assets.isEmpty else { return [] }
         checkpoint()
         var copy = project
+        var placed: [UUID] = []
         for asset in assets {
             let kind: TrackKind = asset.kind == .audio ? .audio : .video
             guard let trackIndex = copy.tracks.lastIndex(where: { $0.kind == kind })
@@ -56,23 +64,28 @@ extension EditorStore {
             if asset.kind == .image { clip.duration = 5 }
             copy.tracks[trackIndex].clips.append(clip)
             copy.tracks[trackIndex].sortClips()
+            placed.append(clip.id)
         }
         project = copy
+        return placed
     }
 
     // MARK: - クリップの追加
 
-    func addMediaClip(assetID: UUID, trackID: UUID, at time: Double) {
+    @discardableResult
+    func addMediaClip(assetID: UUID, trackID: UUID, at time: Double) -> UUID? {
         guard let asset = project.asset(assetID),
-              let ti = project.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+              let ti = project.tracks.firstIndex(where: { $0.id == trackID }) else { return nil }
         let start = project.canvas.snap(max(0, time))
         let duration = project.canvas.snap(max(project.canvas.frameDuration,
                                                asset.kind == .image ? 5 : asset.duration))
+        let clip = Clip(name: asset.displayName, start: start, duration: duration,
+                        content: .media(assetID: assetID, sourceStart: 0))
         edit {
-            $0.tracks[ti].clips.append(Clip(name: asset.displayName, start: start, duration: duration,
-                                            content: .media(assetID: assetID, sourceStart: 0)))
+            $0.tracks[ti].clips.append(clip)
             $0.tracks[ti].sortClips()
         }
+        return clip.id
     }
 
     func addTextClip(templateID: UUID, trackID: UUID, at time: Double, duration: Double = 3) {

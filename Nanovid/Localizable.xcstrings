@@ -322,6 +322,17 @@
         }
       }
     },
+    "AI から操作できるようにする (MCP)" : {
+      "comment" : "アプリのメニュー。MCP サーバの入切。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Allow AI to Control Nanovid (MCP)"
+          }
+        }
+      }
+    },
     "Finder で表示" : {
       "localizations" : {
         "en" : {
@@ -348,6 +359,27 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "HEVC (Smaller Files)"
+          }
+        }
+      }
+    },
+    "MCP の接続先をコピー" : {
+      "comment" : "アプリのメニュー。MCP クライアントに登録する URL をコピーする。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy MCP Server URL"
+          }
+        }
+      }
+    },
+    "MCP サーバを始められませんでした" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t Start the MCP Server"
           }
         }
       }
@@ -1067,6 +1099,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Level"
+          }
+        }
+      }
+    },
+    "ポート %@ を使えませんでした。ほかのアプリが使っているかもしれません。\n%@" : {
+      "comment" : "1 つ目はポート番号、2 つ目はシステムからの理由。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port %@ is unavailable. Another app may be using it.\n%@"
           }
         }
       }

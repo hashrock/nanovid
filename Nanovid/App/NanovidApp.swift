@@ -42,6 +42,8 @@ struct NanovidApp: App {
     /// タイムラインの吸着。切り替えをここに置き、TimelineView とは
     /// 同じ保存先を読む。ツールバーに絵柄で置くと何のアイコンか伝わりにくい。
     @AppStorage(TimelineView.snappingKey) private var snappingEnabled = true
+    /// AI から MCP で操作できるようにするか（MCPServer）。既定は切ってある。
+    @AppStorage(MCPServer.enabledKey) private var mcpEnabled = false
 
     var body: some Scene {
         // 1 プロジェクトを 1 つの窓で編集する作り。窓を閉じたら終了する
@@ -51,11 +53,20 @@ struct NanovidApp: App {
                 .frame(minWidth: 1100, minHeight: 700)
                 .onAppear(perform: openProjectFromArguments)
                 .modifier(AppDelegateLink(delegate: appDelegate, store: store))
+                .modifier(MCPServerLink(store: store, enabled: $mcpEnabled))
         }
         // テスト中は最初の窓を開かせない。
         .defaultLaunchBehavior(Self.isRunningTests ? .suppressed : .presented)
         .windowToolbarStyle(.unified)
         .commands {
+            CommandGroup(after: .appSettings) {
+                Toggle("AI から操作できるようにする (MCP)", isOn: $mcpEnabled)
+                Button("MCP の接続先をコピー") {
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(MCPServer.endpoint, forType: .string)
+                }
+                .disabled(!mcpEnabled)
+            }
             CommandGroup(replacing: .newItem) {
                 Button("新規プロジェクト") { store.newProject() }
                     .keyboardShortcut("n")
@@ -238,6 +249,28 @@ private struct AppDelegateLink: ViewModifier {
         content
             .onAppear { delegate.store = store }
             .background(WindowReader { delegate.attach($0) })
+    }
+}
+
+/// メニューの入切に合わせて MCP サーバを動かし、編集先の store を渡す。
+private struct MCPServerLink: ViewModifier {
+    let store: EditorStore
+    @Binding var enabled: Bool
+
+    func body(content: Content) -> some View {
+        content.onChange(of: enabled, initial: true) {
+            let server = MCPServer.shared
+            server.store = store
+            guard enabled, !NanovidApp.isRunningTests else { return server.stop() }
+            server.start { reason in
+                enabled = false
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = L("MCP サーバを始められませんでした")
+                alert.informativeText = L("ポート \(String(MCPServer.port)) を使えませんでした。ほかのアプリが使っているかもしれません。\n\(reason)")
+                alert.runModal()
+            }
+        }
     }
 }
 
