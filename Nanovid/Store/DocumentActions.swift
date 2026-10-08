@@ -178,17 +178,19 @@ extension EditorStore {
         alert.runModal()
     }
 
-    /// 録音ファイルの保存先。
+    /// 録音ファイルの保存先。決まらなければ nil（録音を始めない）。
     ///
     /// 書けるならプロジェクトの隣の Recordings/（フォルダごと持ち運べる）。
-    /// Sandbox の下ではプロジェクトのフォルダに書く権利が無いので、ムービー
-    /// フォルダの下に置く（com.apple.security.assets.movies.read-write）。
-    func recordingURL() -> URL {
+    /// Sandbox の下ではプロジェクトのフォルダに書く権利が無いので、ユーザーに
+    /// 選んでもらったフォルダに置く（RecordingsFolder）。決め打ちの場所
+    /// （~/Movies など）には置かない（App Review 2.4.5(i)）。
+    func recordingURL() -> URL? {
+        guard let dir = recordingsDirectory() else { return nil }
         let stamp = DateFormatter.recordingStamp.string(from: Date())
-        return recordingsDirectory().appendingPathComponent("rec-\(stamp).wav")
+        return dir.appendingPathComponent("rec-\(stamp).wav")
     }
 
-    private func recordingsDirectory() -> URL {
+    private func recordingsDirectory() -> URL? {
         let fm = FileManager.default
         if let base = baseURL {
             let dir = base.appendingPathComponent("Recordings", isDirectory: true)
@@ -199,7 +201,35 @@ extension EditorStore {
                 return dir
             }
         }
-        return Self.userMoviesDirectory.appendingPathComponent("Nanovid Recordings", isDirectory: true)
+        if let dir = RecordingsFolder.shared.saved(), Self.canWrite(into: dir) {
+            return dir
+        }
+        return chooseRecordingsDirectory()
+    }
+
+    /// 録音の保存先のフォルダを、標準のパネルで選んでもらう。
+    ///
+    /// 初めて録音するとき（プロジェクトの隣に書けない場合）と、覚えていた
+    /// フォルダに書けなくなったときに出る。「ファイル > 録音の保存先を選ぶ…」
+    /// からいつでも選び直せる。キャンセルなら nil。
+    @discardableResult
+    func chooseRecordingsDirectory() -> URL? {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = RecordingsFolder.shared.saved() ?? baseURL
+        panel.message = L("録音を保存するフォルダを選んでください")
+        panel.prompt = L("選ぶ")
+        guard panel.runModal() == .OK, let folder = panel.url else { return nil }
+        guard Self.canWrite(into: folder) else {
+            presentError(L("このフォルダには保存できません"),
+                         L("別のフォルダを選んでください。"))
+            return nil
+        }
+        RecordingsFolder.shared.remember(folder)
+        return folder
     }
 
     private static func canWrite(into dir: URL) -> Bool {
@@ -207,18 +237,6 @@ extension EditorStore {
         guard FileManager.default.createFile(atPath: probe.path, contents: nil) else { return false }
         try? FileManager.default.removeItem(at: probe)
         return true
-    }
-
-    /// 本物の ~/Movies。Sandbox の下では FileManager の moviesDirectory が
-    /// コンテナの中を指し、そこに置くとユーザーから見えなくなるので、
-    /// ホームを自前で引いて組み立てる。
-    static var userMoviesDirectory: URL {
-        if let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir {
-            return URL(fileURLWithPath: String(cString: home), isDirectory: true)
-                .appendingPathComponent("Movies", isDirectory: true)
-        }
-        return FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
     }
 }
 

@@ -511,6 +511,17 @@
         }
       }
     },
+    "このフォルダには保存できません" : {
+      "comment" : "選んだフォルダに書き込めなかったときの警告の見出し。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cannot save to this folder"
+          }
+        }
+      }
+    },
     "この位置で分割" : {
       "localizations" : {
         "en" : {
@@ -1562,6 +1573,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extract"
+          }
+        }
+      }
+    },
+    "別のフォルダを選んでください。" : {
+      "comment" : "選んだフォルダに書き込めなかったときの警告の本文。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a different folder."
           }
         }
       }
@@ -2753,6 +2775,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Record"
+          }
+        }
+      }
+    },
+    "録音の保存先を選ぶ…" : {
+      "comment" : "ファイルメニューの項目。録音の保存先のフォルダを選び直す。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Recordings Folder…"
+          }
+        }
+      }
+    },
+    "録音を保存するフォルダを選んでください" : {
+      "comment" : "フォルダ選択パネルの説明文。録音した音声ファイルの保存先を選んでもらう。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder to save recordings in"
           }
         }
       }
