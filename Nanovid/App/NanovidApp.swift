@@ -75,6 +75,9 @@ struct NanovidApp: App {
                 Divider()
                 // 開いたときの案内を「あとで」にした場合の入口。
                 Button("素材の場所を指定…") { store.locateMissingMedia() }
+                // 録音の保存先は決め打ちにせず、ユーザーに選んでもらう（App Review 2.4.5(i)）。
+                // 初めて録音するときにも聞くが、あとから変えるための入口。
+                Button("録音の保存先を選ぶ…") { store.chooseRecordingsDirectory() }
             }
             CommandGroup(replacing: .saveItem) {
                 // .saveItem を置き換えると標準の「閉じる」も消えるので置き直す。

@@ -100,15 +100,14 @@ struct ExportView: View {
                 } else {
                     Button("閉じる") { dismiss() }
                         .keyboardShortcut(.cancelAction)
-                    Button("書き出す") { start() }
+                    Button("書き出す") { chooseOutputIfNeededAndStart() }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(outputURL == nil || store.duration <= 0)
+                        .disabled(store.duration <= 0)
                 }
             }
         }
         .padding(20)
         .frame(width: 460, height: 380)
-        .onAppear { if outputURL == nil { outputURL = defaultOutputURL() } }
     }
 
     /// 進み具合の百分率。"%" を付けた文字列を先に作って渡す。
@@ -123,20 +122,34 @@ struct ExportView: View {
         return L("\(bitrate / 1_000_000) Mbps · 約 \(Format.fileSize(bytes))")
     }
 
-    private func defaultOutputURL() -> URL? {
-        let name = store.project.name.isEmpty ? "movie" : store.project.name
-        let dir = store.baseURL
-            ?? FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask).first
-        return dir?.appendingPathComponent("\(name).mp4")
-    }
-
-    private func chooseOutput() {
+    /// 出力先は決め打ちにせず、毎回標準の保存パネルで選んでもらう。
+    ///
+    /// 以前はプロジェクトの隣かムービーフォルダを最初から選んでいたが、Sandbox の
+    /// 下ではどちらも書けない（ムービーフォルダはコンテナの中を指す）うえ、
+    /// App Review で決め打ちの場所として指摘された（Guideline 2.4.5(i)）。
+    /// パネルで選んだ場所は、このセッションの間は Sandbox の下でも書ける。
+    @discardableResult
+    private func chooseOutput() -> Bool {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.mpeg4Movie]
-        panel.nameFieldStringValue = outputURL?.lastPathComponent ?? "movie.mp4"
-        if let dir = outputURL?.deletingLastPathComponent() { panel.directoryURL = dir }
-        guard panel.runModal() == .OK, let url = panel.url else { return }
+        panel.canCreateDirectories = true
+        let name = store.project.name.isEmpty ? "movie" : store.project.name
+        panel.nameFieldStringValue = outputURL?.lastPathComponent ?? "\(name).mp4"
+        // 開いたときの場所の提案だけ。どこに置くかはユーザーが決める。
+        if let dir = outputURL?.deletingLastPathComponent() ?? store.baseURL {
+            panel.directoryURL = dir
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return false }
         outputURL = url
+        return true
+    }
+
+    /// 出力先をまだ選んでいなければ、先にパネルを出す。キャンセルなら何もしない。
+    private func chooseOutputIfNeededAndStart() {
+        if outputURL == nil {
+            guard chooseOutput() else { return }
+        }
+        start()
     }
 
     private func start() {

@@ -169,8 +169,9 @@ struct ContentView: View {
             }
         } else {
             store.pause()
+            // 保存先を選ぶパネルをキャンセルしたら録音しない。
+            guard let url = store.recordingURL() else { return }
             recordingAnchor = store.currentTime
-            let url = store.recordingURL()
             Task { @MainActor in
                 let ok = await recorder.start(to: url)
                 if !ok, case .denied = recorder.state {

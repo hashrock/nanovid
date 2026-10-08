@@ -209,9 +209,8 @@ Release に入る権限:
 | エンタイトルメント | 用途 |
 |---|---|
 | `app-sandbox` | Sandbox そのもの |
-| `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先 |
-| `files.bookmarks.app-scope` | 素材の bookmark（下記） |
-| `assets.movies.read-write` | 録音の置き場（下記） |
+| `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先・録音の保存先 |
+| `files.bookmarks.app-scope` | 素材と録音の保存先の bookmark（下記） |
 | `device.audio-input` | マイク |
 
 Sandbox の下では、ユーザーが開いた `.nanovid` そのものにしか触れず、隣の素材も
@@ -225,10 +224,18 @@ bookmark を持たない以前の版のプロジェクトや、別の Mac から
 開くと、読めない素材の数を出して素材のフォルダを選ぶよう勧める。選んだあと
 保存すれば次からはそのまま開ける。「ファイル > 素材の場所を指定…」からも呼べる。
 
-録音はプロジェクトの隣の `Recordings/` に置くが、Sandbox ではプロジェクトの
-フォルダに書く権利が無いので、書けなければ `~/Movies/Nanovid Recordings/` に置く。
-Sandbox 下の `FileManager` の Movies はコンテナの中を指し、置いてもユーザーから
-見えないので、ホームを自前で引いて本物の `~/Movies` を組み立てている。
+ムービーフォルダなど決め打ちの場所には書かない。`assets.movies.read-write` を
+持っていたところ、App Review で「機能に見合わない entitlement」「決め打ちの場所
+（~/movies）を使っている」と指摘された（Guideline 2.4.5(i)、0.2.0 (66)）。
+書き出し先も録音の保存先も、標準の Open/Save パネルでユーザーに選んでもらう。
+
+- 書き出しは毎回保存パネルで選ぶ（最初から出力先を埋めておかない）。MCP の
+  `export_video` も `path` を省くと保存パネルを出す。
+- 録音はプロジェクトの隣の `Recordings/` に置くが、Sandbox ではプロジェクトの
+  フォルダに書く権利が無いので、書けなければ初めて録音するときに保存先のフォルダを
+  選んでもらう。選んだフォルダは app-scoped の bookmark にして覚えておき
+  （`RecordingsFolder`）、次に起動したときもそのまま使う。「ファイル > 録音の保存先を
+  選ぶ…」から選び直せる。
 
 `isReadableFile` / `isWritableFile`（access(2)）は POSIX の権限しか見ず、
 Sandbox に拒まれるファイルでも true を返す。読めるか・書けるかは実際に

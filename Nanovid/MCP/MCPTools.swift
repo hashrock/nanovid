@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import UniformTypeIdentifiers
 
 /// MCP から呼べる道具。どれも起動中の EditorStore を通して編集するので、
 /// 画面にそのまま映り、⌘Z で取り消せる。
@@ -45,7 +46,8 @@ enum MCPTools {
             tool("import_media",
                  "Import video, audio or image files into the project's media library. "
                  + "With append_to_timeline, also place each one at the end of a matching track. "
-                 + "In the sandboxed release build only files inside ~/Movies can be read.",
+                 + "The sandboxed App Store build can only read files the user has opened or chosen in Nanovid "
+                 + "(for example by dragging them into the window); ask the user to import other files from the app.",
                  ["paths": array(of: ["type": "string"], "Absolute file paths."),
                   "append_to_timeline": boolean("Place the imported media at the end of the timeline. Default false.")],
                  required: ["paths"]),
@@ -137,8 +139,9 @@ enum MCPTools {
                  [:]),
             tool("export_video",
                  "Export the output range to an MP4 file and wait until it is done.",
-                 ["path": string("Destination .mp4 path. Defaults to ~/Movies/<project name>.mp4. "
-                                 + "The sandboxed release build can only write inside ~/Movies."),
+                 ["path": string("Destination .mp4 path. If omitted, Nanovid shows a standard save dialog "
+                                 + "and the user chooses where to save. The sandboxed App Store build can only "
+                                 + "write to locations the user has chosen, so prefer omitting it."),
                   "codec": ["type": "string", "enum": ["h264", "hevc"], "description": "Default h264."],
                   "quality": ["type": "string", "enum": ["standard", "high", "max"], "description": "Default high."]]),
         ]
@@ -252,7 +255,8 @@ enum MCPTools {
         let urls = paths.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
         for url in urls where !FileManager.default.isReadableFile(atPath: url.path) {
             throw Failure(FileManager.default.fileExists(atPath: url.path)
-                ? "Cannot read \(url.path). The sandboxed release build can only read files inside ~/Movies."
+                ? "Cannot read \(url.path). The sandboxed App Store build can only read files the user has "
+                    + "opened or chosen in Nanovid. Ask the user to import it from the app."
                 : "No such file: \(url.path)")
         }
         store.buildError = nil
@@ -512,8 +516,12 @@ enum MCPTools {
         if let path = args["path"] as? String {
             url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
         } else {
-            let name = store.project.name.isEmpty ? "movie" : store.project.name
-            url = EditorStore.userMoviesDirectory.appendingPathComponent("\(name).mp4")
+            // 決め打ちの場所（~/Movies など）には書かない（App Review 2.4.5(i)）。
+            // 標準の保存パネルで、置き場所をユーザーに選んでもらう。
+            guard let chosen = chooseExportDestination(store) else {
+                throw Failure("The user cancelled the save dialog. Nothing was exported.")
+            }
+            url = chosen
         }
         var settings = ExportSettings()
         if let codec = args["codec"] as? String {
@@ -530,9 +538,24 @@ enum MCPTools {
                                         settings: settings) { _ in }
         } catch {
             throw Failure("\(error.localizedDescription) (\(url.path)). "
-                          + "The sandboxed release build can only write inside ~/Movies.")
+                          + "The sandboxed App Store build can only write to locations the user has chosen. "
+                          + "Call export_video without path to let the user pick one.")
         }
         return [.text("Exported \(seconds(store.duration)) to \(url.path).")]
+    }
+
+    /// 書き出し先を標準の保存パネルで選んでもらう。キャンセルなら nil。
+    private static func chooseExportDestination(_ store: EditorStore) -> URL? {
+        NSApp.activate()
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.mpeg4Movie]
+        panel.canCreateDirectories = true
+        let name = store.project.name.isEmpty ? "movie" : store.project.name
+        panel.nameFieldStringValue = "\(name).mp4"
+        // 開いたときの場所の提案だけ。どこに置くかはユーザーが決める。
+        if let dir = store.baseURL { panel.directoryURL = dir }
+        guard panel.runModal() == .OK else { return nil }
+        return panel.url
     }
 
     // MARK: - 引数
