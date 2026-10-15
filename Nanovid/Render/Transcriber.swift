@@ -54,8 +54,6 @@ struct SubtitleProgress: Equatable, Sendable {
 enum TranscriptionError: LocalizedError {
     case unavailable
     case unsupportedLocale(String)
-    case noAudio
-    case readFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -63,10 +61,6 @@ enum TranscriptionError: LocalizedError {
             return SubtitleGeneration.requirement
         case .unsupportedLocale(let name):
             return L("この言語には対応していません: \(name)")
-        case .noAudio:
-            return L("タイムラインに音声がありません。")
-        case .readFailed(let message):
-            return L("音声を読み込めませんでした: \(message)")
         }
     }
 }
@@ -142,25 +136,10 @@ final class Transcriber {
         }
 
         progress(SubtitleProgress(phase: .buildingAudio, fraction: nil))
-        let built = try await CompositionBuilder.build(project: project, baseURL: baseURL)
-        let audioTracks = built.composition.tracks(withMediaType: .audio)
-        guard !audioTracks.isEmpty else { throw TranscriptionError.noAudio }
-
         let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber])
             ?? AVAudioFormat(standardFormatWithSampleRate: 16000, channels: 1)!
-
-        let reader = try AVAssetReader(asset: built.composition)
-        let output = AVAssetReaderAudioMixOutput(audioTracks: audioTracks,
-                                                 audioSettings: Self.settings(for: format))
-        output.audioMix = built.audioMix
-        output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else {
-            throw TranscriptionError.readFailed(L("音声出力を追加できません"))
-        }
-        reader.add(output)
-        guard reader.startReading() else {
-            throw TranscriptionError.readFailed(reader.error?.localizedDescription ?? L("不明なエラー"))
-        }
+        let (reader, output, duration) = try await TimelineAudio.startReading(
+            project: project, baseURL: baseURL, settings: Self.settings(for: format))
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         let (stream, continuation) = AsyncStream<AnalyzerInput>.makeStream()
@@ -175,7 +154,7 @@ final class Transcriber {
         }
 
         progress(SubtitleProgress(phase: .listening, fraction: 0))
-        let total = max(built.duration, 0.001)
+        let total = max(duration, 0.001)
         let feeding = Task.detached { [format] in
             defer { continuation.finish() }
             while let sample = output.copyNextSampleBuffer() {

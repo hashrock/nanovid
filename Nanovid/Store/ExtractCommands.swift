@@ -34,15 +34,63 @@ extension EditorStore {
 
     /// 指定した範囲を全トラックから抜き、後ろを詰める。
     func extract(range: ClosedRange<Double>) {
-        let length = range.upperBound - range.lowerBound
-        guard length > 1e-6 else { return }
+        extract(ranges: [range])
+    }
+
+    /// いくつもの範囲をまとめて抜く。取り消しは 1 回で全部戻る。
+    /// 範囲は昇順で重ならないこと。後ろから抜くので、手前の範囲の位置はずれない。
+    func extract(ranges: [ClosedRange<Double>]) {
+        let ranges = ranges.filter { $0.upperBound - $0.lowerBound > 1e-6 }
+        guard !ranges.isEmpty else { return }
         edit { p in
             for ti in p.tracks.indices where !p.tracks[ti].isLocked {
-                let cut = p.tracks[ti].clips.flatMap { Self.cut($0, by: range, length: length) }
-                p.tracks[ti].clips = cut.sorted { $0.start < $1.start }
+                var clips = p.tracks[ti].clips
+                for range in ranges.reversed() {
+                    let length = range.upperBound - range.lowerBound
+                    clips = clips.flatMap { Self.cut($0, by: range, length: length) }
+                }
+                p.tracks[ti].clips = clips.sorted { $0.start < $1.start }
             }
         }
         selectedClipIDs = []
+    }
+
+    // MARK: - 無音カット
+
+    enum SilenceCutError: LocalizedError {
+        case busy, emptyTimeline, timelineChanged
+
+        var errorDescription: String? {
+            switch self {
+            case .busy: return L("無音カットはすでに動いています。")
+            case .emptyTimeline: return L("タイムラインに何も置かれていません。")
+            case .timelineChanged: return L("解析中にタイムラインが変わったので、無音カットを取りやめました。")
+            }
+        }
+    }
+
+    var canCutSilence: Bool { !isCuttingSilence && contentEnd > 0 }
+
+    /// タイムラインの無音を探して抜き、詰める。抜いた秒数を返す（見つからなければ 0）。
+    @MainActor
+    @discardableResult
+    func cutSilence(options: SilenceDetection.Options = .standard) async throws -> Double {
+        guard !isCuttingSilence else { throw SilenceCutError.busy }
+        guard contentEnd > 0 else { throw SilenceCutError.emptyTimeline }
+        isCuttingSilence = true
+        defer { isCuttingSilence = false }
+
+        let snapshot = project
+        let base = baseURL
+        let levels = try await Task.detached(priority: .userInitiated) {
+            try await AudioLevelMeter.measure(project: snapshot, baseURL: base)
+        }.value
+        // 測っているあいだに編集されると、測った時刻と中身が食い違う。
+        guard project == snapshot else { throw SilenceCutError.timelineChanged }
+
+        let ranges = SilenceDetection.cuts(in: levels, options: options, project: snapshot)
+        extract(ranges: ranges)
+        return ranges.reduce(0) { $0 + $1.upperBound - $1.lowerBound }
     }
 
     /// 1 つのクリップを範囲で切る。

@@ -201,6 +201,19 @@ struct ContentView: View {
             Button { store.save() } label: { Label("保存", systemImage: "square.and.arrow.down") }
         }
         ToolbarItem {
+            if store.isCuttingSilence {
+                ProgressView().controlSize(.small)
+            } else {
+                Menu {
+                    SilenceCutMenuItems(store: store)
+                } label: {
+                    Label("無音カット", systemImage: "waveform.badge.minus")
+                }
+                .help("喋っていない間を見つけて、全トラックから抜いて詰める")
+                .disabled(!store.canCutSilence)
+            }
+        }
+        ToolbarItem {
             Button { showExport = true } label: {
                 Label("書き出し", systemImage: "square.and.arrow.up")
             }

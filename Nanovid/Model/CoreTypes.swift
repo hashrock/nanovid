@@ -19,6 +19,21 @@ extension CMTime {
     var secondsOrZero: Double { isNumeric ? CMTimeGetSeconds(self) : 0 }
 }
 
+extension Array where Element == ClosedRange<Double> {
+    /// 重なる・接する範囲をひとつにまとめる。下端の昇順に並べてから渡すこと。
+    func merged() -> [ClosedRange<Double>] {
+        var result: [ClosedRange<Double>] = []
+        for range in self {
+            if let last = result.last, range.lowerBound <= last.upperBound + 1e-9 {
+                result[result.count - 1] = last.lowerBound...Swift.max(last.upperBound, range.upperBound)
+            } else {
+                result.append(range)
+            }
+        }
+        return result
+    }
+}
+
 // MARK: - キャンバス
 
 struct CanvasPreset: Identifiable, Hashable {
