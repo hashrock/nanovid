@@ -95,6 +95,13 @@ enum MCPTools {
                  ["clip_ids": array(of: ["type": "string"], "Clip IDs."),
                   "ripple": boolean("Close the gap left behind. Default false.")],
                  required: ["clip_ids"]),
+            tool("cut_silence",
+                 "Find stretches where nobody is talking in the mixed timeline audio and remove them from "
+                 + "every unlocked track, closing the gaps (a jump cut). Only the output range is touched. "
+                 + "Returns how many seconds were removed. One undo reverts it all.",
+                 ["threshold_db": number("Audio quieter than this counts as silence, in dBFS. Default -40."),
+                  "min_silence": number("Only remove pauses at least this long, in seconds. Default 0.5."),
+                  "padding": number("Keep this much of each pause next to speech, in seconds. Default 0.15.")]),
             tool("set_clip_properties",
                  "Change appearance and sound of clips. Only the given fields change.",
                  ["clip_ids": array(of: ["type": "string"], "Clip IDs."),
@@ -160,6 +167,7 @@ enum MCPTools {
         case "trim_clip": return try trimClip(args, store)
         case "split_clips": return try splitClips(args, store)
         case "delete_clips": return try deleteClips(args, store)
+        case "cut_silence": return try await cutSilence(args, store)
         case "set_clip_properties": return try setClipProperties(args, store)
         case "set_text_props": return try setTextProps(args, store)
         case "set_output_range": return try setOutputRange(args, store)
@@ -385,6 +393,19 @@ enum MCPTools {
         store.selectedClipIDs = ids
         if bool(args, "ripple") ?? false { store.rippleDeleteSelection() } else { store.deleteSelection() }
         return [.text("Deleted \(ids.count) clip(s).")]
+    }
+
+    private static func cutSilence(_ args: [String: Any], _ store: EditorStore) async throws -> [Content] {
+        let defaults = SilenceDetection.Options.standard
+        let options = SilenceDetection.Options(
+            thresholdDB: number(args, "threshold_db", default: defaults.thresholdDB),
+            minimumSilence: max(0, number(args, "min_silence", default: defaults.minimumSilence)),
+            padding: max(0, number(args, "padding", default: defaults.padding)))
+        let before = store.project.duration
+        let removed = try await store.cutSilence(options: options)
+        return [.json(["removed_seconds": removed,
+                       "duration_before": before,
+                       "duration_after": store.project.duration])]
     }
 
     private static func setClipProperties(_ args: [String: Any], _ store: EditorStore) throws -> [Content] {

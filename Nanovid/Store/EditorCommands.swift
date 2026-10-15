@@ -234,19 +234,7 @@ extension EditorStore {
             .filter { ids.contains($0.id) }
             .map { $0.start...($0.end) }
             .sorted { $0.lowerBound < $1.lowerBound }
-        guard var current = ranges.first else { return [] }
-
-        var merged: [ClosedRange<Double>] = []
-        for range in ranges.dropFirst() {
-            if range.lowerBound <= current.upperBound + 1e-9 {
-                current = current.lowerBound...max(current.upperBound, range.upperBound)
-            } else {
-                merged.append(current)
-                current = range
-            }
-        }
-        merged.append(current)
-        return merged
+        return ranges.merged()
     }
 
     /// 選択したクリップ全体が占める時間。ズームや情報表示に使う。

@@ -190,4 +190,37 @@ struct ExtractTests {
         #expect(abs(store.duration - 10) < 1e-9)
         #expect(clips(store, 0).count == 1)
     }
+
+    // MARK: - まとめて抜く（無音カット）
+
+    @Test("いくつもの範囲をまとめて抜くと、それぞれの長さぶん縮む")
+    func extractManyRanges() {
+        let store = makeStore()
+        store.extract(ranges: [2...3, 5...5.5, 8...9])
+
+        #expect(abs(store.duration - 7.5) < 1e-9)
+        let video = clips(store, 0)
+        #expect(video.count == 4)
+        // 残るのは素材の 0-2 / 3-5 / 5.5-8 / 9-10。
+        let sources = video.compactMap { clip -> Double? in
+            if case .media(_, let s) = clip.content { return s }
+            return nil
+        }
+        #expect(sources.count == 4)
+        for (actual, expected) in zip(sources, [0, 3, 5.5, 9]) {
+            #expect(abs(actual - expected) < 1e-9)
+        }
+        let captions = clips(store, 1)
+        #expect(abs(captions[0].start - 1) < 1e-9)
+        #expect(abs(captions[1].start - 4.5) < 1e-9, "6 が 1.5 秒ぶん前へ")
+    }
+
+    @Test("まとめて抜いても取り消しは 1 回で戻る")
+    func extractManyUndoesAtOnce() {
+        let store = makeStore()
+        store.extract(ranges: [2...3, 5...6])
+        store.undo()
+        #expect(abs(store.duration - 10) < 1e-9)
+        #expect(clips(store, 0).count == 1)
+    }
 }

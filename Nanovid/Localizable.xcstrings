@@ -1742,6 +1742,16 @@
         }
       }
     },
+    "喋っていない間を見つけて、全トラックから抜いて詰める" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Find pauses where nobody is talking and remove them from every track"
+          }
+        }
+      }
+    },
     "図形" : {
       "comment" : "矩形レイヤー。テキストレイヤーと対になる種別名。",
       "localizations" : {
@@ -1967,6 +1977,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Scale"
+          }
+        }
+      }
+    },
+    "控えめ（1 秒以上の間）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gentle (pauses of 1 s or more)"
           }
         }
       }
@@ -2228,12 +2248,52 @@
         }
       }
     },
+    "標準（0.5 秒以上の間）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard (pauses of 0.5 s or more)"
+          }
+        }
+      }
+    },
     "準備中" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preparing"
+          }
+        }
+      }
+    },
+    "無音を詰める" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cut Silence"
+          }
+        }
+      }
+    },
+    "無音カット" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cut Silence"
+          }
+        }
+      }
+    },
+    "無音カットはすでに動いています。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cut Silence is already running."
           }
         }
       }
@@ -2616,6 +2676,16 @@
         }
       }
     },
+    "解析中にタイムラインが変わったので、無音カットを取りやめました。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The timeline changed while the audio was being analyzed, so Cut Silence was canceled."
+          }
+        }
+      }
+    },
     "言語" : {
       "localizations" : {
         "en" : {
@@ -2632,6 +2702,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Downloading language model"
+          }
+        }
+      }
+    },
+    "詰められる無音は見つかりませんでした。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No silence long enough to cut was found."
+          }
+        }
+      }
+    },
+    "詰め気味（0.3 秒以上の間）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tight (pauses of 0.3 s or more)"
           }
         }
       }

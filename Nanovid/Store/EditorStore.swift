@@ -35,6 +35,9 @@ final class EditorStore {
     /// プロジェクトには保存しない（編集中の目印なので）。
     var extractStart: Double?
 
+    /// 無音カットのために音を測っているあいだ true。
+    var isCuttingSilence = false
+
     /// 字幕の自動生成の進み具合。nil なら動いていない。
     var subtitleProgress: SubtitleProgress?
     /// 動いている書き起こし。中止のために持っておく（型は macOS 26 限定なので AnyObject）。

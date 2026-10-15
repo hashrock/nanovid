@@ -133,6 +133,8 @@ struct NanovidApp: App {
                     .disabled(store.extractStart == nil)
                 Button("切り抜きをやめる") { store.cancelExtract() }
                     .disabled(store.extractStart == nil)
+                Menu("無音を詰める") { SilenceCutMenuItems(store: store) }
+                    .disabled(!store.canCutSilence)
                 Divider()
                 Button("削除 (Delete)") { store.deleteSelection() }
                     .disabled(store.selectedClipIDs.isEmpty)
