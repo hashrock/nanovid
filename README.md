@@ -25,7 +25,7 @@ https://jam.hashrock.info/p/321ccf26dcde4218b7ec419f3bddebcc
 
 ## ダウンロード
 
-**[Nanovid 0.3.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.3.0/Nanovid-0.3.0.zip)**
+**[Nanovid 0.4.0 をダウンロード](https://github.com/hashrock/nanovid/releases/download/v0.4.0/Nanovid-0.4.0.zip)**
 （[リリース一覧](https://github.com/hashrock/nanovid/releases/latest)）
 
 zip を展開して `Nanovid.app` をアプリケーションフォルダへ。
