@@ -25,7 +25,12 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CATALOG = os.path.join(ROOT, 'Nanovid', 'Localizable.xcstrings')
+# 表は 2 つある。MCP の文言だけ別の表に分けてあり、App Store 用ビルドには
+# 表ごと同梱しない（Nanovid/MCP/MCPMenu.swift）。見張る中身はどちらも同じ。
+CATALOGS = [
+    os.path.join(ROOT, 'Nanovid', 'Localizable.xcstrings'),
+    os.path.join(ROOT, 'Nanovid', 'MCP', 'MCP.xcstrings'),
+]
 SOURCE_DIRS = [os.path.join(ROOT, 'Nanovid')]
 
 # 補間も書式指定子も同じ印に潰して突き合わせる。`L("\(n) 個")` が `%lld 個` に
@@ -123,9 +128,12 @@ def translation_values(localization):
 
 def main():
     quiet = '--quiet' in sys.argv
-    catalog = json.load(open(CATALOG, encoding='utf-8'))
-    strings = catalog['strings']
-    source_language = catalog.get('sourceLanguage', 'ja')
+    strings = {}
+    source_language = 'ja'
+    for path in CATALOGS:
+        catalog = json.load(open(path, encoding='utf-8'))
+        strings.update(catalog['strings'])
+        source_language = catalog.get('sourceLanguage', source_language)
 
     by_shape = {}
     for key in strings:

@@ -69,6 +69,22 @@ jobs:
           "$products/Nanovid.app/Contents/MacOS/Nanovid" \
             --selftest "$RUNNER_TEMP/nanovid-selftest"
 
+      # App Store 用ビルドは MCP をコンパイルから外す（NANOVID_APPSTORE=YES）。
+      # #if の片側だけ壊れても気づけるよう、こちらの構成でもテストを通し、
+      # できたアプリに MCP が残っていないことを見る。署名は要らないので外す。
+      # selftest が使う成果物を作り直してしまうので、最後に置く。
+      - name: App Store 用ビルドでもテストが通ること
+        run: Scripts/test.sh --skip-l10n --appstore
+
+      - name: App Store 用ビルドに MCP が入っていないこと
+        run: |
+          set -o pipefail
+          xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/appstore-build" build \
+            NANOVID_APPSTORE=YES CODE_SIGNING_ALLOWED=NO | tail -5
+          Scripts/check-no-mcp.sh \
+            "$RUNNER_TEMP/appstore-build/Build/Products/Release/Nanovid.app"
+
       - name: 失敗したら結果を残す
         if: failure()
         uses: actions/upload-artifact@v4

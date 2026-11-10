@@ -41,6 +41,9 @@ AVFoundation まわりで踏んだ問題と、調べて分かったことは [is
 
 ## AI から操作する（MCP）
 
+直接配布版（上のダウンロード。Developer ID 署名）だけの機能。Mac App Store 版には
+入っていない（[App Store 用ビルドと MCP](#app-store-用ビルドと-mcp)）。
+
 アプリのメニュー（nanovid）の「AI から操作できるようにする (MCP)」を入れると、
 `http://127.0.0.1:47231/mcp` で MCP サーバ（Streamable HTTP）が立ち上がる。
 いま開いているプロジェクトを AI が編集し、その場で画面に映る。⌘Z で戻せる。
@@ -77,6 +80,7 @@ open Nanovid.xcodeproj        # Xcode から ⌘R
 ```sh
 Scripts/test.sh            # 速い層だけ（既定）。Xcode からは ⌘U
 Scripts/test.sh --all      # 重い層も含めて全部（CI と同じ）
+Scripts/test.sh --appstore # App Store 用ビルド（MCP 抜き）で走らせる
 ```
 
 普段流すのは関数レベルの速い層だけ。合成を組んで実際に絵を描くもの、実ファイルを
@@ -214,6 +218,7 @@ Release に入る権限:
 | `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先・録音の保存先 |
 | `files.bookmarks.app-scope` | 素材と録音の保存先の bookmark（下記） |
 | `device.audio-input` | マイク |
+| `network.server` | MCP サーバの待ち受け（127.0.0.1 だけ）。**直接配布版だけ**。App Store 用ビルドには入らない |
 
 Sandbox の下では、ユーザーが開いた `.nanovid` そのものにしか触れず、隣の素材も
 読めない。そこで取り込んだ時点で素材ごとに security-scoped bookmark を作って
@@ -258,7 +263,8 @@ Organizer から送る。
 App Store Connect に Bundle ID `com.hashrock.nanovid` のアプリを作っておく。
 配布用の証明書とプロビジョニングプロファイルは、書き出しのときに Xcode が
 用意する（`-allowProvisioningUpdates`）。Archive は Developer ID と同じ Release
-構成で作り、書き出しのときに App Store 用の署名に掛け直す。
+構成に `NANOVID_APPSTORE=YES` を足して作り（下記）、書き出しのときに App Store 用の
+署名に掛け直す。
 
 ビルド番号はコミット数を使う。App Store Connect は同じ版の中で番号が増えて
 いないと受け付けないため。未コミットの変更があると、同じ番号で中身の違う
@@ -266,7 +272,41 @@ App Store Connect に Bundle ID `com.hashrock.nanovid` のアプリを作って�
 
 送る前に、審査やアップロードで弾かれるものを見る。App Sandbox、デバッグ用の
 `get-task-allow` が無いこと、Privacy manifest、暗号化の申告、マイクと音声認識の
-用途説明とその英訳、アプリのカテゴリ。
+用途説明とその英訳、アプリのカテゴリ、MCP が入っていないこと。
+
+#### App Store 用ビルドと MCP
+
+App Store に出すビルドには、AI から操作するための MCP サーバを入れない。
+ローカルとはいえポートを開いて待ち受ける機能と、そのための `network.server` は、
+審査で用途を問われやすい。直接配布版（`Scripts/release.sh`）には今までどおり入る。
+
+切り替えはビルド設定 `NANOVID_APPSTORE`（既定は `NO`）ひとつ。`YES` にすると:
+
+| 何が | どう落ちるか |
+|---|---|
+| サーバ・道具・メニューのコード（`Nanovid/MCP/`）と、その呼び出し | コンパイル条件 `APPSTORE` が立ち、`#if !APPSTORE` の中身がコンパイルされない |
+| メニューとアラートの文言 | MCP の文言だけ別の表（`Nanovid/MCP/MCP.xcstrings`）に分けてあり、`EXCLUDED_SOURCE_FILE_NAMES` で同梱から外れる |
+| `network.server` | `ENABLE_INCOMING_NETWORK_CONNECTIONS` が `NO` になる |
+| MCP のテスト（`MCPTests`） | 同じ条件でコンパイルから外れる |
+
+実行時のフラグで隠すのではなく、バイナリに入らない。`Scripts/check-no-mcp.sh` が
+できあがったアプリの文字列（`strings`）・シンボル（`nm`）・リンクしているフレーム
+ワーク・文言の表・entitlement を見て確かめる。`Scripts/appstore.sh` と CI から走る。
+
+```sh
+Scripts/appstore.sh --archive-only   # App Store 用に Archive して検査（Apple とは通信しない）
+Scripts/test.sh --appstore           # App Store 用ビルドでテスト
+xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Release \
+  build NANOVID_APPSTORE=YES         # 素の xcodebuild で作る
+Scripts/check-no-mcp.sh path/to/Nanovid.app
+```
+
+Xcode の Product > Archive にはこの切り替えが入らないので、MCP 入りになる。
+App Store に出すものは必ず `Scripts/appstore.sh` で作る。
+
+MCP に関わるコードを足すときは `Nanovid/MCP/` の中に置き、ファイルを
+`#if !APPSTORE` でくるむ。文言は `MCP.xcstrings` に足して `MCPStrings.L()` か
+`Text(_:tableName:)` で引く（`Localizable.xcstrings` に入れると App Store 版に残る）。
 
 App Store 向けに入れてあるもの:
 
@@ -291,8 +331,11 @@ Scripts/make-appicon.sh
 # 配布用に署名してビルドする
 Scripts/release.sh
 
-# Mac App Store に出す .pkg を作る
+# Mac App Store に出す .pkg を作る（MCP 抜き）
 Scripts/appstore.sh
+
+# App Store 用ビルドに MCP が残っていないかを見る（appstore.sh と CI から自動で走る）
+Scripts/check-no-mcp.sh path/to/Nanovid.app
 
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png
@@ -315,6 +358,8 @@ Scripts/check-localization.py
 `Localizable.xcstrings` のキーになり、英語の訳が当たる。SwiftUI を通らない側
 （`NSAlert`、`LocalizedError` の文面、`String` を返す enum の表示名）は
 `L()` で自分で引く。`Nanovid/UI/Localized.swift` にまとめてある。
+MCP の文言だけは別の表（`Nanovid/MCP/MCP.xcstrings`）にある。App Store 用ビルドに
+同梱しないため。
 
 保存する文字列は 2 種類に分けて扱う。
 
@@ -369,6 +414,7 @@ Nanovid/
     TextClipsPane.swift   下段「字幕」タブ（一覧と一括編集）
     TimelineTicks.swift   目盛りの刻み幅とスクロール計算（純ロジック・テスト対象）
     Localized.swift       SwiftUI を通らない文言の入口（L / LName・後述）
+  MCP/        AI から操作するための MCP サーバ（直接配布版だけ。App Store 用ビルドには入らない）
   Localizable.xcstrings   日本語をキーにした文言カタログ（英語の訳つき）
   InfoPlist.xcstrings     マイクと音声認識の用途説明
   Resources/
