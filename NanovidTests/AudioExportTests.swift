@@ -4,7 +4,10 @@ import Foundation
 @testable import Nanovid
 
 /// 音声だけの書き出し（AudioExporter）。実際に書き出して、長さと中身を見る。
-@Suite(.tags(.media), TestTier.heavy)
+///
+/// 制限時間を付けてある。書き出しは読み手と書き手の受け渡しで進むので、噛み合わないと
+/// 失敗ではなく「いつまでも終わらない」になる。そのとき名前が残るように。
+@Suite(.tags(.media), TestTier.heavy, .timeLimit(.minutes(2)))
 struct AudioExportTests {
 
     private func makeTempDir() throws -> URL {
