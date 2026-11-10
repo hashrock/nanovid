@@ -152,6 +152,25 @@ struct MCPTests {
         #expect(try await call("seek", ["time": true], store: store).isError)
     }
 
+    @Test("import_media は読めないパスを、パネルを出さずに断る")
+    func importMediaRejectsUnreadablePaths() async throws {
+        let store = EditorStore()
+        let missing = try await call("import_media", ["paths": ["/nonexistent/nanovid-test.mp4"]], store: store)
+        #expect(missing.isError)
+        #expect(missing.text.contains("without paths"), "パネルで選んでもらう道を案内する")
+        #expect(try await call("import_media", ["paths": [String]()], store: store).isError)
+        #expect(store.project.assets.isEmpty)
+    }
+
+    @Test("パスの ~ は本当のホームに展開する（Sandbox のコンテナではなく）")
+    func tildeExpandsToTheRealHome() throws {
+        let home = String(cString: try #require(getpwuid(getuid())?.pointee.pw_dir))
+        #expect(MCPTools.fileURL("~/Movies/a.mp4").path == home + "/Movies/a.mp4")
+        #expect(MCPTools.fileURL("~").path == home)
+        #expect(MCPTools.fileURL("/tmp/a.mp4").path == "/tmp/a.mp4")
+        #expect(MCPTools.fileURL("~/out", isDirectory: true).hasDirectoryPath)
+    }
+
     // MARK: - HTTP
 
     @Test("HTTP の要求は本文が揃うまで待つ")

@@ -58,9 +58,25 @@ claude mcp add --transport http nanovid http://127.0.0.1:47231/mcp
 録音した音声の書き出し。
 
 既定では切ってある。待ち受けるのは 127.0.0.1 だけで、ブラウザから別のサイトが
-叩けないよう、手元以外の `Origin` は断る。配布版は App Sandbox の中で動くので、
-AI から新しく取り込める素材と書き出し先は、ムービーフォルダの中に限られる
-（すでにプロジェクトにある素材はそのまま使える）。
+叩けないよう、手元以外の `Origin` は断る。
+
+配布版は App Sandbox の中で動く。アプリが触れるのは、ユーザーが nanovid で開いた・
+選んだファイルだけで、AI が言ったパスをそのまま読み書きすることはできない
+（ムービーフォルダなど、決め打ちで触れる場所もない）。そこで、ファイルを扱う道具は
+パスを省いて呼ぶと標準のパネルが出て、ユーザーが選ぶ:
+
+| 道具 | パスを省くと | パスを渡すと |
+|---|---|---|
+| `import_media`（`paths`） | 開くパネルで素材を選ぶ | ユーザーが選んだことのない場所は「読めない」で返る |
+| `export_video` / `export_audio` / `export_subtitles`（`path`） | 保存パネルで書き出し先を選ぶ | ユーザーが選んだことのない場所は「アクセス権がない」で返る |
+| `export_recordings`（`folder`） | フォルダを選ぶパネル | 同上 |
+
+パスを渡して通るのは、開いている `.nanovid` パッケージの中と、アプリのコンテナ
+（`~/Library/Containers/com.hashrock.nanovid/Data/`）の中だけ（0.5.0 の Release ビルドを
+ad-hoc 署名 + Sandbox で動かして確かめた）。すでにプロジェクトにある素材は、bookmark で
+アクセス権を取り戻すのでそのまま使える。パスの `~` は本当のホームに展開する
+（Sandbox の下では素の展開がコンテナを指すため）。Debug ビルドは Sandbox の外なので、
+どのパスも通る。
 
 ## ビルドと実行
 
@@ -257,28 +273,44 @@ Sandbox に拒まれるファイルでも true を返す。読めるか・書け
 ### Mac App Store
 
 ```sh
-Scripts/appstore.sh                 # Archive して App Store 向けの .pkg を書き出す
-Scripts/appstore.sh --archive-only  # Archive と検査だけ（Apple とは通信しない）
+Scripts/appstore.sh --archive-only  # Archive と検査だけ
+Scripts/appstore.sh --adhoc         # 手順の確認用。ad-hoc 署名のアプリと署名なしの .pkg
+Scripts/appstore.sh --manual        # 手元の証明書とプロファイルで署名して .pkg にする
+Scripts/appstore.sh                 # Xcode に証明書とプロファイルを用意させて書き出す
 ```
 
-`dist/appstore/` に `.xcarchive` と `.pkg` ができる。アップロードはしないので、
-`.pkg` を Transporter に渡すか、`.xcarchive` をダブルクリックして Xcode の
-Organizer から送る。
+Apple と通信するのは引数なしだけ（`-allowProvisioningUpdates`）。ほかの 3 つは
+手元で完結する（署名にタイムスタンプも付けない）。どれもアップロードはしない。
+`dist/appstore/` にできた `.pkg` を Transporter に渡す。
 
-前もって一度だけ、Xcode の Settings > Accounts にチームのアカウントを入れ、
-App Store Connect に Bundle ID `com.hashrock.nanovid` のアプリを作っておく。
-配布用の証明書とプロビジョニングプロファイルは、書き出しのときに Xcode が
-用意する（`-allowProvisioningUpdates`）。Archive は Developer ID と同じ Release
-構成に `NANOVID_APPSTORE=YES` を足して作り（下記）、書き出しのときに App Store 用の
-署名に掛け直す。
+Archive は Developer ID と同じ Release 構成に `NANOVID_APPSTORE=YES` を足して作り
+（下記）、そのあと App Store 用の署名に掛け直す。掛け直し方が 2 通りある。
+
+- **`--manual`**: キーチェーンの Apple Distribution の証明書でアプリを署名し直し
+  （プロビジョニングプロファイルを `Contents/embedded.provisionprofile` に埋め込み、
+  entitlements に `com.apple.application-identifier` と
+  `com.apple.developer.team-identifier` を足す）、Mac Installer Distribution の証明書
+  （キーチェーンでの名前は「3rd Party Mac Developer Installer」）で `productbuild` する。
+  証明書とプロファイルは Apple Developer のサイトで一度作っておく。足りないものが
+  あれば、何が無いかと作り方を出して止まる。プロファイルが署名に使う証明書のもので
+  あることも見る。
+- **引数なし**: Xcode に任せる。前もって Xcode の Settings > Accounts にチームの
+  アカウントを入れ、App Store Connect に Bundle ID `com.hashrock.nanovid` のアプリを
+  作っておく。証明書とプロファイルは書き出しのときに Xcode が用意する。
+
+`--adhoc` は証明書なしで `--manual` と同じ道を通す。できた
+`dist/appstore/adhoc/Nanovid.app` は App Store 版と同じ中身・同じ Sandbox なので、
+手元で動きを確かめるのに使う。書類は `open -n -a <アプリ> <書類.nanovid>` で渡す
+（起動引数で渡すと Sandbox のアクセス権が付かない）。
 
 ビルド番号はコミット数を使う。App Store Connect は同じ版の中で番号が増えて
 いないと受け付けないため。未コミットの変更があると、同じ番号で中身の違う
 ものができるので止まる。
 
 送る前に、審査やアップロードで弾かれるものを見る。App Sandbox、デバッグ用の
-`get-task-allow` が無いこと、Privacy manifest、暗号化の申告、マイクと音声認識の
-用途説明とその英訳、アプリのカテゴリ、MCP が入っていないこと。
+`get-task-allow` が無いこと、権限が決めた 4 つだけであること、Privacy manifest、
+Bundle ID、暗号化の申告、マイクと音声認識の用途説明とその英訳、アプリのカテゴリ、
+アイコン、MCP が入っていないこと。署名し直したアプリにも同じ検査をもう一度かける。
 
 #### App Store 用ビルドと MCP
 
@@ -338,7 +370,7 @@ Scripts/make-appicon.sh
 Scripts/release.sh
 
 # Mac App Store に出す .pkg を作る（MCP 抜き）
-Scripts/appstore.sh
+Scripts/appstore.sh [--archive-only|--adhoc|--manual]
 
 # App Store 用ビルドに MCP が残っていないかを見る（appstore.sh と CI から自動で走る）
 Scripts/check-no-mcp.sh path/to/Nanovid.app
