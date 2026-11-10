@@ -183,4 +183,76 @@ struct MCPTests {
         #expect(!MCPServer.isLocalOrigin("null"))
     }
 }
+
+/// MCP から録音を書き出す。
+@MainActor
+struct MCPRecordingExportTests {
+
+    private func call(_ name: String, _ args: [String: Any] = [:],
+                      store: EditorStore) async throws -> (text: String, isError: Bool) {
+        let message: [String: Any] = ["jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                      "params": ["name": name, "arguments": args]]
+        let reply = await MCPProtocol.handle(MCPJSON.data(message), store: store)
+        let body = try #require(reply.body)
+        let object = try #require(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        let r = try #require(object["result"] as? [String: Any])
+        let content = try #require(r["content"] as? [[String: Any]])
+        return (content.compactMap { $0["text"] as? String }.first ?? "", r["isError"] as? Bool ?? false)
+    }
+
+    private func json(_ text: String) throws -> [String: Any] {
+        try #require(try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+    }
+
+    @Test("get_project は録音に印を付け、export_recordings はフォルダへ写す")
+    func exportsRecordings() async throws {
+        let dir = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            .appendingPathComponent("nanovid-mcp-rec-\(UUID().uuidString)")
+        let out = dir.appendingPathComponent("out")
+        try FileManager.default.createDirectory(at: out, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let package = dir.appendingPathComponent("movie.nanovid")
+        try ProjectIO.save(Project.starter(), to: package)
+        let recording = ProjectIO.recordingsDirectory(in: package).appendingPathComponent("rec-20261110-100000.wav")
+        try FileManager.default.createDirectory(at: recording.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+        try Data("録音".utf8).write(to: recording)
+        let bgm = dir.appendingPathComponent("bgm.mp3")
+        try Data("BGM".utf8).write(to: bgm)
+        var project = Project.starter()
+        project.assets = [recording, bgm].map {
+            MediaAsset(path: $0.path, displayName: $0.lastPathComponent, kind: .audio,
+                       duration: 1, naturalSize: nil, hasAudio: true, hasVideo: false)
+        }
+        try ProjectIO.save(project, to: package, previous: package)
+        let store = EditorStore()
+        store.open(url: package)
+
+        let summary = try json(try await call("get_project", store: store).text)
+        let assets = try #require(summary["assets"] as? [[String: Any]])
+        #expect(assets.map { $0["recording"] as? Bool } == [true, false])
+
+        let done = try await call("export_recordings", ["folder": out.path], store: store)
+        #expect(!done.isError)
+        let exported = try #require(try json(done.text)["exported"] as? [String])
+        #expect(exported == [out.appendingPathComponent("rec-20261110-100000.wav").path])
+        #expect(try String(contentsOfFile: exported[0], encoding: .utf8) == "録音")
+
+        // 録音でない素材は断る。
+        let wrong = try await call("export_recordings",
+                                   ["asset_ids": [project.assets[1].id.uuidString], "folder": out.path],
+                                   store: store)
+        #expect(wrong.isError)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: out.path).count == 1)
+    }
+
+    @Test("録音が無いプロジェクトでは、パネルを出さずに断る")
+    func refusesWhenThereAreNoRecordings() async throws {
+        let store = EditorStore()
+        let result = try await call("export_recordings", store: store)
+        #expect(result.isError)
+        #expect(result.text.contains("no recordings"))
+    }
+}
 #endif

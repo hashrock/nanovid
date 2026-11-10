@@ -153,6 +153,16 @@ enum MCPTools {
                                  + "write to locations the user has chosen, so prefer omitting it."),
                   "codec": ["type": "string", "enum": ["h264", "hevc"], "description": "Default h264."],
                   "quality": ["type": "string", "enum": ["standard", "high", "max"], "description": "Default high."]]),
+            tool("export_recordings",
+                 "Copy audio recorded in Nanovid (assets with \"recording\": true in get_project) out of the "
+                 + "project as WAV files, keeping their file names. Recordings live inside the .nanovid package, "
+                 + "so this is how to hand them to another app. Existing files are never overwritten; "
+                 + "a number is appended instead. Returns the paths written.",
+                 ["asset_ids": array(of: ["type": "string"],
+                                     "Recordings to export. Defaults to every recording in the project."),
+                  "folder": string("Destination folder. If omitted, Nanovid shows a standard folder dialog "
+                                   + "and the user chooses. The sandboxed build can only write to locations "
+                                   + "the user has chosen, so prefer omitting it.")]),
         ]
     }
 
@@ -189,6 +199,7 @@ enum MCPTools {
             return [.text("Redone.")]
         case "save_project": return try saveProject(store)
         case "export_video": return try await exportVideo(args, store)
+        case "export_recordings": return try exportRecordings(args, store)
         default: throw Failure("Unknown tool: \(name)")
         }
     }
@@ -210,7 +221,8 @@ enum MCPTools {
         ]
         out["assets"] = p.assets.map { a -> [String: Any] in
             ["id": a.id.uuidString, "name": a.displayName, "kind": a.kind.rawValue,
-             "duration": a.duration, "path": a.url(relativeTo: store.baseURL).path]
+             "duration": a.duration, "path": a.url(relativeTo: store.baseURL).path,
+             "recording": RecordingExport.isRecording(a, document: store.documentURL)]
         }
         out["text_templates"] = p.textTemplates.map { t -> [String: Any] in
             ["id": t.id.uuidString, "name": LName(t.name),
@@ -565,6 +577,44 @@ enum MCPTools {
                           + "Call export_video without path to let the user pick one.")
         }
         return [.text("Exported \(seconds(store.duration)) to \(url.path).")]
+    }
+
+    private static func exportRecordings(_ args: [String: Any], _ store: EditorStore) throws -> [Content] {
+        var ids: Set<UUID>?
+        if let raw = args["asset_ids"] as? [String] {
+            let all = Set(store.recordings().map(\.id))
+            var chosen: Set<UUID> = []
+            for text in raw {
+                guard let id = UUID(uuidString: text), all.contains(id) else {
+                    throw Failure("\(text) is not a recording in this project. "
+                                  + "Recordings are the assets with \"recording\": true in get_project.")
+                }
+                chosen.insert(id)
+            }
+            ids = chosen
+        }
+        guard !store.recordings(among: ids).isEmpty else {
+            throw Failure("This project has no recordings to export.")
+        }
+        let folder: URL
+        if let path = args["folder"] as? String {
+            folder = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+        } else {
+            // 決め打ちの場所には書かない。標準のパネルでユーザーに選んでもらう。
+            NSApp.activate()
+            guard let chosen = store.chooseRecordingExportFolder() else {
+                throw Failure("The user cancelled the folder dialog. Nothing was exported.")
+            }
+            folder = chosen
+        }
+        do {
+            let written = try store.exportRecordings(ids, into: folder)
+            return [.json(["exported": written.map(\.path)])]
+        } catch {
+            throw Failure("\(error.localizedDescription) (\(folder.path)). "
+                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Call export_recordings without folder to let the user pick one.")
+        }
     }
 
     /// 書き出し先を標準の保存パネルで選んでもらう。キャンセルなら nil。

@@ -261,6 +261,17 @@
         }
       }
     },
+    "%lld 個の録音を書き出す…" : {
+      "comment" : "素材の一覧の右クリックメニュー。選んでいる録音（2 つ以上）を、選んだフォルダへまとめて写す。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export %lld Recordings…"
+          }
+        }
+      }
+    },
     "(不明な素材)" : {
       "localizations" : {
         "en" : {
@@ -2142,6 +2153,17 @@
         }
       }
     },
+    "書き出せませんでした" : {
+      "comment" : "録音の書き出しに失敗したときのアラートの見出し。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Couldn’t Export"
+          }
+        }
+      }
+    },
     "最高" : {
       "localizations" : {
         "en" : {
@@ -2804,6 +2826,17 @@
         }
       }
     },
+    "録音のファイルが見つかりません: %@" : {
+      "comment" : "%@ はファイル名。書き出そうとした録音が消えている・読めないとき。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The recording file can’t be found: %@"
+          }
+        }
+      }
+    },
     "録音はプロジェクトの中に保存されます。先にプロジェクトの保存先を選んでください。" : {
       "comment" : "まだ保存していないプロジェクトで録音しようとしたとき、保存パネルに出す説明文。",
       "localizations" : {
@@ -2822,6 +2855,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t Start Recording"
+          }
+        }
+      }
+    },
+    "録音を書き出す…" : {
+      "comment" : "素材の一覧の右クリックメニュー。録音した音声 1 つを、選んだ場所へ WAV で写す。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Recording…"
+          }
+        }
+      }
+    },
+    "録音を書き出すフォルダを選んでください" : {
+      "comment" : "フォルダ選択パネルの説明文。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a folder to export the recordings to."
           }
         }
       }
