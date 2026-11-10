@@ -56,7 +56,7 @@ struct ExportView: View {
                 GridRow {
                     Text("出力先").foregroundStyle(.secondary)
                     HStack {
-                        Text(outputURL?.lastPathComponent ?? "未選択")
+                        Text(outputURL?.lastPathComponent ?? L("未選択"))
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Button("選択…") { chooseOutput() }
