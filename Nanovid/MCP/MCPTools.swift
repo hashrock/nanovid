@@ -48,11 +48,12 @@ enum MCPTools {
             tool("import_media",
                  "Import video, audio or image files into the project's media library. "
                  + "With append_to_timeline, also place each one at the end of a matching track. "
-                 + "The sandboxed App Store build can only read files the user has opened or chosen in Nanovid "
-                 + "(for example by dragging them into the window); ask the user to import other files from the app.",
-                 ["paths": array(of: ["type": "string"], "Absolute file paths."),
-                  "append_to_timeline": boolean("Place the imported media at the end of the timeline. Default false.")],
-                 required: ["paths"]),
+                 + "Nanovid runs sandboxed: it can only read files the user has opened or chosen in Nanovid. "
+                 + "So prefer omitting paths; Nanovid then shows a standard open dialog and the user picks the files.",
+                 ["paths": array(of: ["type": "string"],
+                                 "Absolute file paths. If omitted, Nanovid shows a standard open dialog. "
+                                 + "Paths the user has not chosen in Nanovid fail with an access error."),
+                  "append_to_timeline": boolean("Place the imported media at the end of the timeline. Default false.")]),
             tool("add_media_clip",
                  "Place an imported asset on the timeline. Returns the new clip's ID.",
                  ["asset_id": string("Asset ID from get_project."),
@@ -149,7 +150,7 @@ enum MCPTools {
             tool("export_video",
                  "Export the output range to an MP4 file and wait until it is done.",
                  ["path": string("Destination .mp4 path. If omitted, Nanovid shows a standard save dialog "
-                                 + "and the user chooses where to save. The sandboxed App Store build can only "
+                                 + "and the user chooses where to save. Nanovid runs sandboxed and can only "
                                  + "write to locations the user has chosen, so prefer omitting it."),
                   "codec": ["type": "string", "enum": ["h264", "hevc"], "description": "Default h264."],
                   "quality": ["type": "string", "enum": ["standard", "high", "max"], "description": "Default high."]]),
@@ -157,7 +158,7 @@ enum MCPTools {
                  "Export only the audio of the output range (the mix you hear: mute, volume and fades applied) "
                  + "and wait until it is done.",
                  ["path": string("Destination file path. If omitted, Nanovid shows a standard save dialog "
-                                 + "and the user chooses where to save. The sandboxed build can only write "
+                                 + "and the user chooses where to save. Nanovid runs sandboxed and can only write "
                                  + "to locations the user has chosen, so prefer omitting it."),
                   "format": ["type": "string", "enum": ["m4a", "wav"],
                              "description": "m4a is AAC 192 kbps, wav is 16-bit PCM. Default m4a."]]),
@@ -166,7 +167,7 @@ enum MCPTools {
                  + "track becomes one cue (captions, lower thirds and titles alike); times are relative to "
                  + "the start of the output range, so they match the exported video.",
                  ["path": string("Destination file path. If omitted, Nanovid shows a standard save dialog "
-                                 + "and the user chooses where to save. The sandboxed build can only write "
+                                 + "and the user chooses where to save. Nanovid runs sandboxed and can only write "
                                  + "to locations the user has chosen, so prefer omitting it."),
                   "format": ["type": "string", "enum": ["srt", "vtt"], "description": "Default srt."]]),
             tool("export_recordings",
@@ -177,7 +178,7 @@ enum MCPTools {
                  ["asset_ids": array(of: ["type": "string"],
                                      "Recordings to export. Defaults to every recording in the project."),
                   "folder": string("Destination folder. If omitted, Nanovid shows a standard folder dialog "
-                                   + "and the user chooses. The sandboxed build can only write to locations "
+                                   + "and the user chooses. Nanovid runs sandboxed and can only write to locations "
                                    + "the user has chosen, so prefer omitting it.")]),
         ]
     }
@@ -290,14 +291,27 @@ enum MCPTools {
     // MARK: - 素材とクリップ
 
     private static func importMedia(_ args: [String: Any], _ store: EditorStore) async throws -> [Content] {
-        let paths = try strings(args, "paths")
-        guard !paths.isEmpty else { throw Failure("paths is empty.") }
-        let urls = paths.map { URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) }
-        for url in urls where !FileManager.default.isReadableFile(atPath: url.path) {
-            throw Failure(FileManager.default.fileExists(atPath: url.path)
-                ? "Cannot read \(url.path). The sandboxed App Store build can only read files the user has "
-                    + "opened or chosen in Nanovid. Ask the user to import it from the app."
-                : "No such file: \(url.path)")
+        let urls: [URL]
+        if args["paths"] != nil {
+            let paths = try strings(args, "paths")
+            guard !paths.isEmpty else { throw Failure("paths is empty.") }
+            urls = paths.map { fileURL($0) }
+            // isReadableFile（access(2)）は Sandbox に拒まれるファイルでも true を返すことがある。
+            // 実際に開いて確かめる。
+            for url in urls where !MediaAccess.isReachable(url) {
+                throw Failure(FileManager.default.fileExists(atPath: url.path)
+                    ? "Cannot read \(url.path). Nanovid runs sandboxed and can only read files the user has "
+                        + "opened or chosen in Nanovid. Call import_media without paths to let the user pick the files."
+                    : "No such file, or no access to it: \(url.path). Nanovid runs sandboxed and can only read "
+                        + "files the user has opened or chosen in Nanovid. Call import_media without paths to let "
+                        + "the user pick the files.")
+            }
+        } else {
+            // Sandbox の下では、ユーザーがパネルで選んだファイルにだけアクセス権が付く。
+            guard let chosen = chooseMediaToImport(), !chosen.isEmpty else {
+                throw Failure("The user cancelled the open dialog. Nothing was imported.")
+            }
+            urls = chosen
         }
         store.buildError = nil
         let assets = await store.importAssets(urls: urls)
@@ -567,7 +581,7 @@ enum MCPTools {
         guard store.duration > 0 else { throw Failure("The output range is empty.") }
         let url: URL
         if let path = args["path"] as? String {
-            url = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            url = fileURL(path)
         } else {
             // 決め打ちの場所（~/Movies など）には書かない（App Review 2.4.5(i)）。
             // 標準の保存パネルで、置き場所をユーザーに選んでもらう。
@@ -591,7 +605,7 @@ enum MCPTools {
                                         settings: settings) { _ in }
         } catch {
             throw Failure("\(error.localizedDescription) (\(url.path)). "
-                          + "The sandboxed App Store build can only write to locations the user has chosen. "
+                          + "Nanovid runs sandboxed and can only write to locations the user has chosen. "
                           + "Call export_video without path to let the user pick one.")
         }
         return [.text("Exported \(seconds(store.duration)) to \(url.path).")]
@@ -601,7 +615,7 @@ enum MCPTools {
     private static func destination(_ args: [String: Any], fileExtension: String,
                                     _ store: EditorStore) throws -> URL {
         if let path = args["path"] as? String {
-            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+            return fileURL(path)
         }
         // 決め打ちの場所には書かない。標準の保存パネルでユーザーに選んでもらう。
         NSApp.activate()
@@ -625,7 +639,7 @@ enum MCPTools {
             throw Failure(error.localizedDescription)
         } catch {
             throw Failure("\(error.localizedDescription) (\(url.path)). "
-                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Nanovid runs sandboxed and can only write to locations the user has chosen. "
                           + "Call export_audio without path to let the user pick one.")
         }
         return [.text("Exported \(seconds(store.duration)) of audio to \(url.path).")]
@@ -646,7 +660,7 @@ enum MCPTools {
             return [.text("Wrote \(count) cues to \(url.path).")]
         } catch {
             throw Failure("\(error.localizedDescription) (\(url.path)). "
-                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Nanovid runs sandboxed and can only write to locations the user has chosen. "
                           + "Call export_subtitles without path to let the user pick one.")
         }
     }
@@ -670,7 +684,7 @@ enum MCPTools {
         }
         let folder: URL
         if let path = args["folder"] as? String {
-            folder = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true)
+            folder = fileURL(path, isDirectory: true)
         } else {
             // 決め打ちの場所には書かない。標準のパネルでユーザーに選んでもらう。
             NSApp.activate()
@@ -684,9 +698,36 @@ enum MCPTools {
             return [.json(["exported": written.map(\.path)])]
         } catch {
             throw Failure("\(error.localizedDescription) (\(folder.path)). "
-                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Nanovid runs sandboxed and can only write to locations the user has chosen. "
                           + "Call export_recordings without folder to let the user pick one.")
         }
+    }
+
+    /// 引数のパスを URL にする。
+    ///
+    /// Sandbox の下では NSHomeDirectory() も "~" の展開もアプリのコンテナ
+    /// （~/Library/Containers/…/Data）を指す。AI が言う "~/Movies/a.mp4" は本当の
+    /// ホームのつもりなので、そちらで展開する（確かめたら、コンテナの中のパスで
+    /// 「アクセス権がない」と返っていて、どこに書こうとしたのか分かりにくかった）。
+    static func fileURL(_ path: String, isDirectory: Bool = false) -> URL {
+        var path = path
+        if path == "~" || path.hasPrefix("~/"), let home = getpwuid(getuid())?.pointee.pw_dir {
+            path = String(cString: home) + path.dropFirst()
+        } else {
+            path = (path as NSString).expandingTildeInPath
+        }
+        return URL(fileURLWithPath: path, isDirectory: isDirectory)
+    }
+
+    /// 取り込む素材を標準の開くパネルで選んでもらう。キャンセルなら nil。
+    private static func chooseMediaToImport() -> [URL]? {
+        NSApp.activate()
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.allowedContentTypes = ProjectIO.mediaTypes
+        panel.message = L("動画・音声・画像を選んでください")
+        return panel.runModal() == .OK ? panel.urls : nil
     }
 
     /// 書き出し先を標準の保存パネルで選んでもらう。キャンセルなら nil。
