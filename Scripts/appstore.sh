@@ -228,7 +228,7 @@ if [ "$MODE" = manual ] || [ "$MODE" = adhoc ]; then
   2. https://developer.apple.com/account/resources/certificates/add で
      「Apple Distribution」と「Mac Installer Distribution」を作り、ダウンロードして開く
   3. https://developer.apple.com/account/resources/profiles/add で
-     Distribution > Mac App Store Connect、App ID $BUNDLE_ID、2 の Apple Distribution を選んで作り、
+     Distribution > Mac App Store Connect、App ID ${BUNDLE_ID}、2 の Apple Distribution を選んで作り、
      ダウンロードして NANOVID_PROFILE=<パス> で渡す（ダブルクリックで入れてもよい）
 Xcode に任せるなら、引数なしの Scripts/appstore.sh。
 Archive は検査を通っています: $ARCHIVE
