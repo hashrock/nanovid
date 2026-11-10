@@ -91,8 +91,8 @@ AVFoundation に読ませるものは重い層に分けてあり、既定では�
 
 ```sh
 Scripts/test.sh --only HeadlessRenderTests   # スイート 1 つだけ
-xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid \
-  TEST_RUNNER_NANOVID_TESTS=all              # 素の xcodebuild で全部
+TEST_RUNNER_NANOVID_TESTS=all xcodebuild test \
+  -project Nanovid.xcodeproj -scheme Nanovid # 素の xcodebuild で全部（環境変数で渡す）
 ```
 
 テストの置き場はアプリ本体（`TEST_HOST`）なので、走らせるとアプリごと立ち上がる。

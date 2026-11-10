@@ -77,9 +77,11 @@ if [ -n "$ONLY" ]; then
     set -- "$@" "-only-testing:NanovidTests/$ONLY"
 fi
 
-# TEST_RUNNER_ を付けた設定は、テストを動かす側のプロセスの環境変数として入る。
+# TEST_RUNNER_ を付けた環境変数は、頭を外してテストを動かす側のプロセスに入る。
+# xcodebuild の引数（ビルド設定）として渡しても届かない。Xcode 26.4 で確かめたら、
+# 引数で渡していたあいだ重い層は全部「飛ばした」になっていて、それでも緑だった。
 if [ "$TIER" = all ]; then
-    set -- "$@" TEST_RUNNER_NANOVID_TESTS=all
+    export TEST_RUNNER_NANOVID_TESTS=all
     echo "テスト実行中 (${LABEL}・重い層も含む)…"
 else
     echo "テスト実行中 (${LABEL}・速い層だけ。全部走らせるなら --all)…"

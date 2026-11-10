@@ -48,7 +48,12 @@ jobs:
       - name: テスト（速い層だけ・手元と同じ経路）
         run: Scripts/test.sh --skip-l10n
 
+      # TEST_RUNNER_ を付けた環境変数が、頭を外してテストのプロセスに入る。
+      # xcodebuild の引数として渡すと届かず、重い層が黙って全部飛ぶ。
+      # 飛んでいないことも見る（重い層のスイートが 1 つでも「飛ばした」なら落とす）。
       - name: テスト（重い層も含めて全部）
+        env:
+          TEST_RUNNER_NANOVID_TESTS: all
         run: |
           set -o pipefail
           xcodebuild test \
@@ -56,8 +61,11 @@ jobs:
             -scheme Nanovid \
             -configuration Debug \
             -destination 'platform=macOS' \
-            -resultBundlePath TestResults.xcresult \
-            TEST_RUNNER_NANOVID_TESTS=all
+            -resultBundlePath TestResults.xcresult | tee "$RUNNER_TEMP/test.log" | tail -40
+          if grep -q "重い層。Scripts/test.sh --all" "$RUNNER_TEMP/test.log"; then
+            echo "重い層が飛ばされています" >&2
+            exit 1
+          fi
 
       # 描画から書き出しまで、GUI なしで通す経路。ここが一番の本番に近い。
       - name: 書き出しまで通す（--selftest）
