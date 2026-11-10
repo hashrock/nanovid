@@ -214,10 +214,18 @@ struct ContentView: View {
             }
         }
         ToolbarItem {
-            Button { showExport = true } label: {
-                Label("書き出し", systemImage: "square.and.arrow.up")
+            // 「ファイル > 音声を書き出す」が動いているあいだは、進み具合を出す。
+            if let progress = store.audioExportProgress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.circular)
+                    .controlSize(.small)
+                    .help("音声を書き出しています")
+            } else {
+                Button { showExport = true } label: {
+                    Label("書き出し", systemImage: "square.and.arrow.up")
+                }
+                .disabled(store.duration <= 0)
             }
-            .disabled(store.duration <= 0)
         }
         ToolbarItem {
             Button {

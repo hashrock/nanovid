@@ -18,59 +18,6 @@ struct PackageExportTests {
         return url
     }
 
-    /// 440Hz の正弦波を WAV で書く。録音の代わり。
-    private func writeTone(to url: URL, seconds: Double) throws {
-        let sampleRate = 48000.0
-        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: sampleRate,
-                                   channels: 1, interleaved: false)!
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: sampleRate,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-        ]
-        let file = try AVAudioFile(forWriting: url, settings: settings)
-        let frames = AVAudioFrameCount(sampleRate * seconds)
-        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
-        buffer.frameLength = frames
-        let samples = buffer.floatChannelData![0]
-        for i in 0..<Int(frames) {
-            samples[i] = Float(sin(2 * .pi * 440 * Double(i) / sampleRate)) * 0.5
-        }
-        try file.write(from: buffer)
-    }
-
-    /// 書き出した MP4 の音声のピーク（0...1）。音声トラックが無ければ nil。
-    private func audioPeak(of url: URL) async throws -> Float? {
-        let asset = AVURLAsset(url: url)
-        guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return nil }
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false,
-        ])
-        reader.add(output)
-        reader.startReading()
-        var peak: Int16 = 0
-        while let sample = output.copyNextSampleBuffer() {
-            guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
-            var data = Data(count: CMBlockBufferGetDataLength(block))
-            data.withUnsafeMutableBytes { raw in
-                _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: raw.count,
-                                               destination: raw.baseAddress!)
-                for value in raw.bindMemory(to: Int16.self) {
-                    peak = max(peak, value == .min ? .max : abs(value))
-                }
-            }
-        }
-        return Float(peak) / Float(Int16.max)
-    }
-
     @Test("書類の中の録音が、書き出した MP4 に入る（保存して開き直し、名前を変えたあとでも）")
     @MainActor
     func embeddedRecordingIsExported() async throws {
@@ -85,7 +32,7 @@ struct PackageExportTests {
         let store = EditorStore()
         store.open(url: package)
         let recording = try #require(store.recordingURL())
-        try writeTone(to: recording, seconds: 1)
+        try TestAudio.writeTone(to: recording, seconds: 1)
         let asset = try #require(await store.importAssets(urls: [recording]).first)
         let track = try #require(store.project.tracks.first { $0.kind == .audio })
         #expect(store.addMediaClip(assetID: asset.id, trackID: track.id, at: 0) != nil)
@@ -102,7 +49,7 @@ struct PackageExportTests {
         try await Exporter().export(project: reopened, baseURL: dir, to: output,
                                     settings: ExportSettings()) { _ in }
 
-        let peak = try #require(try await audioPeak(of: output), "書き出しに音声トラックが無い")
+        let peak = try #require(try await TestAudio.peak(of: output), "書き出しに音声トラックが無い")
         #expect(peak > 0.2, "音声トラックはあるが、中身が無音（ピーク \(peak)）")
         let duration = try await AVURLAsset(url: output).load(.duration).seconds
         #expect(abs(duration - 1) < 0.2)

@@ -35,6 +35,9 @@ final class EditorStore {
     /// プロジェクトには保存しない（編集中の目印なので）。
     var extractStart: Double?
 
+    /// 音声だけを書き出しているあいだの進み具合（0...1）。nil なら動いていない。
+    var audioExportProgress: Double?
+
     /// 無音カットのために音を測っているあいだ true。
     var isCuttingSilence = false
 

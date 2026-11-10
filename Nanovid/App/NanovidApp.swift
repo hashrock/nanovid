@@ -90,6 +90,19 @@ struct NanovidApp: App {
                     .keyboardShortcut("s")
                 Button("別名で保存…") { store.saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
+                Divider()
+                // 動画（ツールバーの「書き出し」）のほかに外へ出せるもの。
+                // 形式を選ぶと、置き場所を選ぶ保存パネルが出る。
+                Menu("音声を書き出す") {
+                    Button("M4A（AAC）…") { store.exportAudioWithPanel(format: .m4a) }
+                    Button("WAV…") { store.exportAudioWithPanel(format: .wav) }
+                }
+                .disabled(!store.canExportAudio)
+                Menu("字幕を書き出す") {
+                    Button("SRT…") { store.exportSubtitlesWithPanel(format: .srt) }
+                    Button("WebVTT…") { store.exportSubtitlesWithPanel(format: .vtt) }
+                }
+                .disabled(!store.canExportSubtitles)
             }
             // 何も置かないと「ヘルプは利用できません」と出るだけの項目が残る。
             CommandGroup(replacing: .help) {
