@@ -247,6 +247,51 @@ struct MCPRecordingExportTests {
         #expect(try FileManager.default.contentsOfDirectory(atPath: out.path).count == 1)
     }
 
+    @Test("export_subtitles は字幕ファイルを書き、字幕が無ければパネルを出さずに断る")
+    func exportsSubtitles() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nanovid-mcp-subs-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = EditorStore()
+        let empty = try await call("export_subtitles", store: store)
+        #expect(empty.isError)
+
+        var project = Project.starter()
+        let template = project.textTemplates[0]
+        project.tracks[1].clips = [Clip(start: 1, duration: 2, content: .text(
+            TextInstance(templateID: template.id, props: ["text": .string("こんにちは")])))]
+        store.project = project
+
+        let srt = dir.appendingPathComponent("out.srt")
+        let done = try await call("export_subtitles", ["path": srt.path], store: store)
+        #expect(!done.isError)
+        #expect(try String(contentsOf: srt, encoding: .utf8) == "1\n00:00:01,000 --> 00:00:03,000\nこんにちは\n")
+
+        let vtt = dir.appendingPathComponent("out.vtt")
+        _ = try await call("export_subtitles", ["path": vtt.path, "format": "vtt"], store: store)
+        #expect(try String(contentsOf: vtt, encoding: .utf8).hasPrefix("WEBVTT\n\n00:00:01.000 --> 00:00:03.000\n"))
+
+        let unknown = try await call("export_subtitles", ["path": srt.path, "format": "ass"], store: store)
+        #expect(unknown.isError)
+    }
+
+    @Test("export_audio は知らない形式と、空のタイムラインを断る")
+    func exportAudioRefusals() async throws {
+        let store = EditorStore()
+        let empty = try await call("export_audio", ["path": "/tmp/never.m4a"], store: store)
+        #expect(empty.isError)
+
+        var project = Project.starter()
+        let template = project.textTemplates[0]
+        project.tracks[1].clips = [Clip(start: 0, duration: 1, content: .text(TextInstance(templateID: template.id)))]
+        store.project = project
+        let unknown = try await call("export_audio", ["path": "/tmp/never.flac", "format": "flac"], store: store)
+        #expect(unknown.isError)
+        #expect(unknown.text.contains("flac"))
+    }
+
     @Test("録音が無いプロジェクトでは、パネルを出さずに断る")
     func refusesWhenThereAreNoRecordings() async throws {
         let store = EditorStore()

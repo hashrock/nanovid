@@ -69,8 +69,18 @@ if [ ! -d "$APP" ]; then
     exit 1
 fi
 
+# Release は App Sandbox の中で動く。Sandbox のアプリは、引数で渡されたパスを
+# 読めない（「開けませんでした」になる）し、外の一時フォルダにも書けない。
+SANDBOXED=0
+[ "$CONFIG" = Release ] && SANDBOXED=1
+
 if [ "$MAKE_DEMO" = 1 ]; then
-    DEMO_DIR="${TMPDIR:-/tmp/}nanovid-demo"
+    if [ "$SANDBOXED" = 1 ]; then
+        # デモを書くのもアプリ自身なので、アプリのコンテナの中に作らせる。
+        DEMO_DIR="$HOME/Library/Containers/com.hashrock.nanovid/Data/tmp/nanovid-demo"
+    else
+        DEMO_DIR="${TMPDIR:-/tmp/}nanovid-demo"
+    fi
     rm -rf "$DEMO_DIR"
     "$APP/Contents/MacOS/Nanovid" --write-demo "$DEMO_DIR" >/dev/null
     PROJECT="$DEMO_DIR/demo.nanovid"
@@ -84,7 +94,16 @@ if [ -n "$PROJECT" ]; then
     ABS="$(cd "$(dirname "$PROJECT")" && pwd)/$(basename "$PROJECT")"
     echo "起動: $APP"
     echo "開く: $ABS"
-    open -n "$APP" --args --open "$ABS"
+    if [ "$SANDBOXED" = 1 ]; then
+        # Finder でダブルクリックしたのと同じ道（書類として渡す）で開く。
+        # こうすると Sandbox のアプリにもその書類へのアクセス権が付く。
+        # --args --open で渡すと権限が付かず、「開けませんでした」になる。
+        # 起動と同時に届いた書類は、窓が出るまでアプリの側で持っている
+        # （AppDelegate.application(_:open:)）。
+        open -n -a "$APP" "$ABS"
+    else
+        open -n "$APP" --args --open "$ABS"
+    fi
 else
     echo "起動: $APP"
     open -n "$APP"

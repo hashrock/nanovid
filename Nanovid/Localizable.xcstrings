@@ -363,6 +363,17 @@
         }
       }
     },
+    "M4A（AAC）…" : {
+      "comment" : "音声の書き出しの形式。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "M4A (AAC)…"
+          }
+        }
+      }
+    },
     "Nanovid のサポート" : {
       "comment" : "ヘルプメニュー。サポートのページをブラウザで開く。",
       "localizations" : {
@@ -381,6 +392,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ON/OFF"
+          }
+        }
+      }
+    },
+    "SRT…" : {
+      "comment" : "字幕の書き出しの形式。訳さずそのままでよい。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SRT…"
+          }
+        }
+      }
+    },
+    "WAV…" : {
+      "comment" : "音声の書き出しの形式。訳さずそのままでよい。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WAV…"
+          }
+        }
+      }
+    },
+    "WebVTT…" : {
+      "comment" : "字幕の書き出しの形式。訳さずそのままでよい。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WebVTT…"
           }
         }
       }
@@ -567,6 +611,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "None"
+          }
+        }
+      }
+    },
+    "ほかの書き出しが動いています" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another export is in progress"
           }
         }
       }
@@ -1801,6 +1855,17 @@
         }
       }
     },
+    "字幕を書き出す" : {
+      "comment" : "ファイルメニュー。テキストのクリップを字幕ファイルに書き出す。下に形式（SRT / WebVTT）が並ぶ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Subtitles"
+          }
+        }
+      }
+    },
     "字幕（自動）" : {
       "localizations" : {
         "en" : {
@@ -3004,6 +3069,28 @@
         }
       }
     },
+    "音声を書き出しています" : {
+      "comment" : "ツールバーの進み具合の印に出る説明。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting audio"
+          }
+        }
+      }
+    },
+    "音声を書き出す" : {
+      "comment" : "ファイルメニュー。タイムラインの音だけを音声ファイルに書き出す。下に形式（M4A / WAV）が並ぶ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Audio"
+          }
+        }
+      }
+    },
     "音声を読み込めませんでした: %@" : {
       "comment" : "%@ は下位のエラー文。",
       "localizations" : {
@@ -3021,6 +3108,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Add Audio Track"
+          }
+        }
+      }
+    },
+    "音声入力を追加できません" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cannot add the audio input"
           }
         }
       }

@@ -153,6 +153,22 @@ enum MCPTools {
                                  + "write to locations the user has chosen, so prefer omitting it."),
                   "codec": ["type": "string", "enum": ["h264", "hevc"], "description": "Default h264."],
                   "quality": ["type": "string", "enum": ["standard", "high", "max"], "description": "Default high."]]),
+            tool("export_audio",
+                 "Export only the audio of the output range (the mix you hear: mute, volume and fades applied) "
+                 + "and wait until it is done.",
+                 ["path": string("Destination file path. If omitted, Nanovid shows a standard save dialog "
+                                 + "and the user chooses where to save. The sandboxed build can only write "
+                                 + "to locations the user has chosen, so prefer omitting it."),
+                  "format": ["type": "string", "enum": ["m4a", "wav"],
+                             "description": "m4a is AAC 192 kbps, wav is 16-bit PCM. Default m4a."]]),
+            tool("export_subtitles",
+                 "Write the text clips of the output range as a subtitle file. Every text clip on a visible "
+                 + "track becomes one cue (captions, lower thirds and titles alike); times are relative to "
+                 + "the start of the output range, so they match the exported video.",
+                 ["path": string("Destination file path. If omitted, Nanovid shows a standard save dialog "
+                                 + "and the user chooses where to save. The sandboxed build can only write "
+                                 + "to locations the user has chosen, so prefer omitting it."),
+                  "format": ["type": "string", "enum": ["srt", "vtt"], "description": "Default srt."]]),
             tool("export_recordings",
                  "Copy audio recorded in Nanovid (assets with \"recording\": true in get_project) out of the "
                  + "project as WAV files, keeping their file names. Recordings live inside the .nanovid package, "
@@ -199,6 +215,8 @@ enum MCPTools {
             return [.text("Redone.")]
         case "save_project": return try saveProject(store)
         case "export_video": return try await exportVideo(args, store)
+        case "export_audio": return try await exportAudio(args, store)
+        case "export_subtitles": return try exportSubtitles(args, store)
         case "export_recordings": return try exportRecordings(args, store)
         default: throw Failure("Unknown tool: \(name)")
         }
@@ -577,6 +595,60 @@ enum MCPTools {
                           + "Call export_video without path to let the user pick one.")
         }
         return [.text("Exported \(seconds(store.duration)) to \(url.path).")]
+    }
+
+    /// 引数の path、無ければ保存パネルで選んでもらった場所。
+    private static func destination(_ args: [String: Any], fileExtension: String,
+                                    _ store: EditorStore) throws -> URL {
+        if let path = args["path"] as? String {
+            return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+        }
+        // 決め打ちの場所には書かない。標準の保存パネルでユーザーに選んでもらう。
+        NSApp.activate()
+        guard let chosen = store.chooseExportDestination(fileExtension: fileExtension) else {
+            throw Failure("The user cancelled the save dialog. Nothing was exported.")
+        }
+        return chosen
+    }
+
+    private static func exportAudio(_ args: [String: Any], _ store: EditorStore) async throws -> [Content] {
+        guard store.duration > 0 else { throw Failure("The output range is empty.") }
+        var format = AudioExportFormat.m4a
+        if let raw = args["format"] as? String {
+            guard let value = AudioExportFormat(rawValue: raw) else { throw Failure("Unknown format \(raw).") }
+            format = value
+        }
+        let url = try destination(args, fileExtension: format.fileExtension, store)
+        do {
+            try await store.exportAudio(to: url, format: format)
+        } catch let error as TimelineAudioError {
+            throw Failure(error.localizedDescription)
+        } catch {
+            throw Failure("\(error.localizedDescription) (\(url.path)). "
+                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Call export_audio without path to let the user pick one.")
+        }
+        return [.text("Exported \(seconds(store.duration)) of audio to \(url.path).")]
+    }
+
+    private static func exportSubtitles(_ args: [String: Any], _ store: EditorStore) throws -> [Content] {
+        var format = SubtitleExport.Format.srt
+        if let raw = args["format"] as? String {
+            guard let value = SubtitleExport.Format(rawValue: raw) else { throw Failure("Unknown format \(raw).") }
+            format = value
+        }
+        guard store.canExportSubtitles else {
+            throw Failure("There are no text clips on visible tracks in the output range.")
+        }
+        let url = try destination(args, fileExtension: format.fileExtension, store)
+        do {
+            let count = try store.exportSubtitles(to: url, format: format)
+            return [.text("Wrote \(count) cues to \(url.path).")]
+        } catch {
+            throw Failure("\(error.localizedDescription) (\(url.path)). "
+                          + "The sandboxed build can only write to locations the user has chosen. "
+                          + "Call export_subtitles without path to let the user pick one.")
+        }
     }
 
     private static func exportRecordings(_ args: [String: Any], _ store: EditorStore) throws -> [Content] {
