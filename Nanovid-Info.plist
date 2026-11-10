@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- ほかのキーはビルド設定（INFOPLIST_KEY_…）から生成される。ここには
+	     ビルド設定で書けない、書類の種類の宣言だけを置く。
+
+	     .nanovid はパッケージ（Finder では 1 つのファイルに見えるフォルダ）。
+	     中身は project.json と Recordings/（ProjectIO）。com.apple.package に
+	     適合させ、LSTypeIsPackage を立てる。
+
+	     以前の版の .nanovid は JSON 1 ファイル。拡張子は同じだが、フォルダでない
+	     ものはパッケージの種類に当たらず、システムは別の種類（dyn.…）として扱う。
+	     Finder から開けるよう、2 つ目の項目で拡張子そのものを引き受ける。
+	     開くパネルの側は ProjectIO.openableTypes で両方を選べるようにしてある。 -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Nanovid Project</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.hashrock.nanovid.project</string>
+			</array>
+			<key>LSTypeIsPackage</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Nanovid Project (0.4 and earlier)</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>nanovid</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.hashrock.nanovid.project</string>
+			<key>UTTypeDescription</key>
+			<string>Nanovid Project</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>nanovid</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

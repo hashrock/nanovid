@@ -19,7 +19,7 @@ enum AssetKind: String, Codable, Hashable {
 /// 元ファイルへの参照のみを持つ。変換もコピーもしない（非破壊・テンポラリなし）。
 struct MediaAsset: Identifiable, Codable, Hashable {
     var id: UUID = UUID()
-    /// プロジェクトファイルからの相対パス、または絶対パス。
+    /// 書類（.nanovid）のあるフォルダからの相対パス、または絶対パス。
     var path: String
     var displayName: String
     var kind: AssetKind
@@ -32,8 +32,13 @@ struct MediaAsset: Identifiable, Codable, Hashable {
     /// security-scoped bookmark。取り込んだときに作り、プロジェクトと一緒に保存する。
     /// 古いプロジェクトには無い（そのときは path だけで探す）。MediaAccess を参照。
     var bookmark: Data? = nil
+    /// 書類（.nanovid パッケージ）の中にあるか。ファイルの上でだけ意味を持つ。
+    /// true のとき path は書類からの相対パス（`Recordings/rec-….wav`）。
+    /// 保存のときに ProjectIO が付け、読み込んだら絶対パスに直して外す。
+    /// メモリの上ではいつも nil。
+    var embedded: Bool? = nil
 
-    /// - Parameter base: プロジェクトファイルのあるディレクトリ。
+    /// - Parameter base: 書類（.nanovid）のあるディレクトリ。
     ///   URL(fileURLWithPath:relativeTo:) は base の末尾スラッシュの有無で
     ///   最後の要素を落としてしまうので、自前で連結する。
     func url(relativeTo base: URL?) -> URL {

@@ -7,8 +7,8 @@
 	<key>com.apple.security.device.audio-input</key>
 	<true/>
 	<!-- 素材ごとに app-scoped の security-scoped bookmark を作り、開き直したときに
-	     アクセス権を取り戻す（MediaAccess）。録音の保存先に選んでもらったフォルダも
-	     同じ仕組みで覚えておく（RecordingsFolder）。Sandbox の外では効かないだけで害は無い。
+	     アクセス権を取り戻す（MediaAccess）。Sandbox の外では効かないだけで害は無い。
+	     録音は書類（.nanovid パッケージ）の中に置くので、bookmark は要らない。
 	     Sandbox そのものと、ユーザーがパネルやドロップで選んだファイル・フォルダへの
 	     読み書きの権限（files.user-selected.read-write）は Release のビルド設定
 	     （ENABLE_APP_SANDBOX / ENABLE_USER_SELECTED_FILES ほか）から入る。

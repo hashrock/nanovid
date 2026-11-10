@@ -21,7 +21,9 @@ extension EditorStore {
     func openProject() {
         guard confirmDiscardIfNeeded() else { return }
         let panel = NSOpenPanel()
-        panel.allowedContentTypes = [ProjectIO.contentType]
+        panel.allowedContentTypes = ProjectIO.openableTypes
+        // パッケージは 1 つの書類として選ぶ（中へ潜らせない）。
+        panel.treatsFilePackagesAsDirectories = false
         panel.allowsMultipleSelection = false
         guard panel.runModal() == .OK, let url = panel.url else { return }
         open(url: url)
@@ -57,6 +59,9 @@ extension EditorStore {
     /// 起きるのは、以前の版（bookmark を持たない）で保存したプロジェクトを
     /// Sandbox の下で開いたときや、別の Mac から持ってきたとき。
     private func offerToLocateMissingMedia() {
+        // テストは片付けたあとの一時フォルダを指したまま走り終えることがある。
+        // 誰も押せないアラートで止まらないようにする。
+        guard !NanovidApp.isRunningTests else { return }
         let missing = MediaAccess.unreachable(in: project, base: baseURL)
         guard !missing.isEmpty else { return }
         let alert = NSAlert()
@@ -109,7 +114,8 @@ extension EditorStore {
     func save() -> Bool {
         guard let url = documentURL else { return saveAs() }
         do {
-            try ProjectIO.save(project, to: url)
+            // 古い 1 ファイルの形式を開いていたときは、ここでパッケージに置き換わる。
+            try ProjectIO.save(project, to: url, previous: url)
             hasUnsavedChanges = false
             return true
         } catch {
@@ -118,14 +124,25 @@ extension EditorStore {
         }
     }
 
+    /// - Parameter message: 保存パネルに出す説明。録音の前に保存してもらうときに使う。
     @discardableResult
-    func saveAs() -> Bool {
+    func saveAs(message: String? = nil) -> Bool {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [ProjectIO.contentType]
         panel.nameFieldStringValue = "\(project.name).\(ProjectIO.fileExtension)"
+        if let message { panel.message = message }
         guard panel.runModal() == .OK, let url = panel.url else { return false }
+        return saveAs(to: url)
+    }
+
+    /// 別の場所へ保存して、そちらを開いている書類にする。
+    @discardableResult
+    func saveAs(to url: URL) -> Bool {
         do {
-            try ProjectIO.save(project, to: url)
+            // 書類の中の録音は新しい書類へ写り、素材の path は保存先が基準になる。
+            let saved = try ProjectIO.save(project, to: url, previous: documentURL)
+            project.assets = saved.assets
+            AssetCache.shared.removeAll()
             documentURL = url
             project.name = url.deletingPathExtension().lastPathComponent
             hasUnsavedChanges = false
@@ -180,63 +197,32 @@ extension EditorStore {
 
     /// 録音ファイルの保存先。決まらなければ nil（録音を始めない）。
     ///
-    /// 書けるならプロジェクトの隣の Recordings/（フォルダごと持ち運べる）。
-    /// Sandbox の下ではプロジェクトのフォルダに書く権利が無いので、ユーザーに
-    /// 選んでもらったフォルダに置く（RecordingsFolder）。決め打ちの場所
-    /// （~/Movies など）には置かない（App Review 2.4.5(i)）。
+    /// 録音は書類（.nanovid パッケージ）の中の Recordings/ に置く。書類の中なら
+    /// App Sandbox の下でもいつでも書けるので、保存先を別に選んでもらう必要がない。
+    /// 決め打ちの場所（~/Movies など）にも置かない（App Review 2.4.5(i)）。
+    ///
+    /// 置き場が要るので、まだ保存していないプロジェクトは先に保存してもらう。
+    /// 古い 1 ファイルの形式を開いているときは、その場でパッケージに保存し直す。
     func recordingURL() -> URL? {
-        guard let dir = recordingsDirectory() else { return nil }
+        guard let package = packageForRecording() else { return nil }
+        let dir = ProjectIO.recordingsDirectory(in: package)
+        do {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        } catch {
+            presentError(L("録音を始められませんでした"), error.localizedDescription)
+            return nil
+        }
         let stamp = DateFormatter.recordingStamp.string(from: Date())
         return dir.appendingPathComponent("rec-\(stamp).wav")
     }
 
-    private func recordingsDirectory() -> URL? {
-        let fm = FileManager.default
-        if let base = baseURL {
-            let dir = base.appendingPathComponent("Recordings", isDirectory: true)
-            // 既にフォルダがあっても書けるとは限らない。isWritableFile は Sandbox の
-            // 拒否を見ないので、実際に置いてみて確かめる。
-            if (try? fm.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
-               Self.canWrite(into: dir) {
-                return dir
-            }
-        }
-        if let dir = RecordingsFolder.shared.saved(), Self.canWrite(into: dir) {
-            return dir
-        }
-        return chooseRecordingsDirectory()
-    }
-
-    /// 録音の保存先のフォルダを、標準のパネルで選んでもらう。
-    ///
-    /// 初めて録音するとき（プロジェクトの隣に書けない場合）と、覚えていた
-    /// フォルダに書けなくなったときに出る。「ファイル > 録音の保存先を選ぶ…」
-    /// からいつでも選び直せる。キャンセルなら nil。
-    @discardableResult
-    func chooseRecordingsDirectory() -> URL? {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = RecordingsFolder.shared.saved() ?? baseURL
-        panel.message = L("録音を保存するフォルダを選んでください")
-        panel.prompt = L("選ぶ")
-        guard panel.runModal() == .OK, let folder = panel.url else { return nil }
-        guard Self.canWrite(into: folder) else {
-            presentError(L("このフォルダには保存できません"),
-                         L("別のフォルダを選んでください。"))
-            return nil
-        }
-        RecordingsFolder.shared.remember(folder)
-        return folder
-    }
-
-    private static func canWrite(into dir: URL) -> Bool {
-        let probe = dir.appendingPathComponent(".nanovid-probe-\(UUID().uuidString)")
-        guard FileManager.default.createFile(atPath: probe.path, contents: nil) else { return false }
-        try? FileManager.default.removeItem(at: probe)
-        return true
+    private func packageForRecording() -> URL? {
+        if let url = documentURL, ProjectIO.isPackage(url) { return url }
+        let saved = documentURL == nil
+            ? saveAs(message: L("録音はプロジェクトの中に保存されます。先にプロジェクトの保存先を選んでください。"))
+            : save()
+        guard saved, let url = documentURL, ProjectIO.isPackage(url) else { return nil }
+        return url
     }
 }
 
