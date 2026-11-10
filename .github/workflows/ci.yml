@@ -54,17 +54,28 @@ jobs:
       # 出力は末尾だけに絞らない。途中で止まったとき、どのテストで止まったかが
       # 残らなくなる（tail は終わるまで何も出さない）。
       - name: テスト（重い層も含めて全部）
-        timeout-minutes: 20
+        timeout-minutes: 10
         env:
           TEST_RUNNER_NANOVID_TESTS: all
         run: |
           set -o pipefail
+          # 普段は 3 分ほどで終わる。6 分たっても動いていたら止まっていると見て、
+          # テストを載せているアプリのスタックを残す（どこで待っているかが分かる）。
+          ( sleep 360
+            pid=$(pgrep -x Nanovid | head -1)
+            if [ -n "$pid" ]; then
+              echo "::group::止まっている Nanovid ($pid) のスタック"
+              sample "$pid" 2 -mayDie 2>/dev/null | sed -n '/^Call graph:/,/^Total number in stack/p' | head -400
+              echo "::endgroup::"
+            fi ) &
+          watchdog=$!
           xcodebuild test \
             -project Nanovid.xcodeproj \
             -scheme Nanovid \
             -configuration Debug \
             -destination 'platform=macOS' \
             -resultBundlePath TestResults.xcresult | tee "$RUNNER_TEMP/test.log"
+          kill "$watchdog" 2>/dev/null || true
           if grep -q "重い層。Scripts/test.sh --all" "$RUNNER_TEMP/test.log"; then
             echo "重い層が飛ばされています" >&2
             exit 1
