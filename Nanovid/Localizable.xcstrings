@@ -479,17 +479,6 @@
         }
       }
     },
-    "このフォルダには保存できません" : {
-      "comment" : "選んだフォルダに書き込めなかったときの警告の見出し。",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cannot save to this folder"
-          }
-        }
-      }
-    },
     "この位置で分割" : {
       "localizations" : {
         "en" : {
@@ -1530,17 +1519,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Extract"
-          }
-        }
-      }
-    },
-    "別のフォルダを選んでください。" : {
-      "comment" : "選んだフォルダに書き込めなかったときの警告の本文。",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Choose a different folder."
           }
         }
       }
@@ -2826,24 +2804,24 @@
         }
       }
     },
-    "録音の保存先を選ぶ…" : {
-      "comment" : "ファイルメニューの項目。録音の保存先のフォルダを選び直す。",
+    "録音はプロジェクトの中に保存されます。先にプロジェクトの保存先を選んでください。" : {
+      "comment" : "まだ保存していないプロジェクトで録音しようとしたとき、保存パネルに出す説明文。",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose Recordings Folder…"
+            "value" : "Recordings are saved inside the project. Choose where to save the project first."
           }
         }
       }
     },
-    "録音を保存するフォルダを選んでください" : {
-      "comment" : "フォルダ選択パネルの説明文。録音した音声ファイルの保存先を選んでもらう。",
+    "録音を始められませんでした" : {
+      "comment" : "録音の置き場（書類の中の Recordings フォルダ）を作れなかったときのアラート。",
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Choose a folder to save recordings in"
+            "value" : "Couldn’t Start Recording"
           }
         }
       }

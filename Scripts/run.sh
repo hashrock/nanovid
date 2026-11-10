@@ -40,7 +40,8 @@ while [ $# -gt 0 ]; do
     shift
 done
 
-if [ -n "$PROJECT" ] && [ ! -f "$PROJECT" ]; then
+# .nanovid はパッケージ（フォルダ）。古い形式は 1 ファイル。どちらも開ける。
+if [ -n "$PROJECT" ] && [ ! -e "$PROJECT" ]; then
     echo "プロジェクトが見つかりません: $PROJECT" >&2
     exit 1
 fi

@@ -169,7 +169,7 @@ struct ContentView: View {
             }
         } else {
             store.pause()
-            // 保存先を選ぶパネルをキャンセルしたら録音しない。
+            // 録音は書類の中に置く。未保存なら先に保存してもらい、キャンセルなら録音しない。
             guard let url = store.recordingURL() else { return }
             recordingAnchor = store.currentTime
             Task { @MainActor in

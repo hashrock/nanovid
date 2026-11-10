@@ -215,13 +215,13 @@ Release に入る権限:
 | エンタイトルメント | 用途 |
 |---|---|
 | `app-sandbox` | Sandbox そのもの |
-| `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先・録音の保存先 |
-| `files.bookmarks.app-scope` | 素材と録音の保存先の bookmark（下記） |
+| `files.user-selected.read-write` | パネルやドロップで選んだ素材・プロジェクト・書き出し先 |
+| `files.bookmarks.app-scope` | 素材の bookmark（下記） |
 | `device.audio-input` | マイク |
 | `network.server` | MCP サーバの待ち受け（127.0.0.1 だけ）。**直接配布版だけ**。App Store 用ビルドには入らない |
 
-Sandbox の下では、ユーザーが開いた `.nanovid` そのものにしか触れず、隣の素材も
-読めない。そこで取り込んだ時点で素材ごとに security-scoped bookmark を作って
+Sandbox の下では、ユーザーが開いた `.nanovid`（パッケージなので中身も含む）にしか
+触れず、隣の素材も読めない。そこで取り込んだ時点で素材ごとに security-scoped bookmark を作って
 プロジェクトに保存し（`MediaAsset.bookmark`）、開くときに解決してアクセス権を
 取り戻す（`MediaAccess`）。置き場所は相対パスを優先し、相対パスで読めないときだけ
 bookmark の指す先へ書き換える。フォルダごと複製したときに、元の場所ではなく
@@ -234,15 +234,15 @@ bookmark を持たない以前の版のプロジェクトや、別の Mac から
 ムービーフォルダなど決め打ちの場所には書かない。`assets.movies.read-write` を
 持っていたところ、App Review で「機能に見合わない entitlement」「決め打ちの場所
 （~/movies）を使っている」と指摘された（Guideline 2.4.5(i)、0.2.0 (66)）。
-書き出し先も録音の保存先も、標準の Open/Save パネルでユーザーに選んでもらう。
+書き出し先は、標準の保存パネルでユーザーに選んでもらう。
 
 - 書き出しは毎回保存パネルで選ぶ（最初から出力先を埋めておかない）。MCP の
   `export_video` も `path` を省くと保存パネルを出す。
-- 録音はプロジェクトの隣の `Recordings/` に置くが、Sandbox ではプロジェクトの
-  フォルダに書く権利が無いので、書けなければ初めて録音するときに保存先のフォルダを
-  選んでもらう。選んだフォルダは app-scoped の bookmark にして覚えておき
-  （`RecordingsFolder`）、次に起動したときもそのまま使う。「ファイル > 録音の保存先を
-  選ぶ…」から選び直せる。
+- 録音は書類（`.nanovid` パッケージ）の中の `Recordings/` に置く。書類の中なら
+  Sandbox の下でもいつでも書けるので、保存先を別に選んでもらう必要がない
+  （以前はプロジェクトの隣に置こうとし、書けなければフォルダを選んでもらっていた）。
+  置き場が要るので、まだ保存していないプロジェクトで録音しようとすると、先に
+  保存パネルが出る。
 
 `isReadableFile` / `isWritableFile`（access(2)）は POSIX の権限しか見ず、
 Sandbox に拒まれるファイルでも true を返す。読めるか・書けるかは実際に
@@ -405,7 +405,7 @@ Nanovid/
   Store/      状態管理
     EditorStore.swift     編集状態・再生・undo
     EditorCommands.swift  分割／トリム／移動／一括編集などの操作
-    ProjectIO.swift       .nanovid（JSON）の読み書き
+    ProjectIO.swift       .nanovid（パッケージ書類）の読み書き。古い 1 ファイルの形式も読む
     AssetCache.swift      AVURLAsset の使い回し
     AudioRecorder.swift   マイク録音（WAV 直書き）
   UI/         SwiftUI
@@ -743,5 +743,49 @@ false のままだと AVFoundation は中身が動かない区間に 1 枚しか
 
 ## プロジェクトファイル
 
-`.nanovid` は JSON。素材はパス参照のみで、プロジェクトファイルと同じ階層以下に
-あるものは相対パスで保存されるので、フォルダごと移動しても開ける。
+`.nanovid` はパッケージ書類（Finder では 1 つのファイルに見えるフォルダ）。
+中身のファイル名は固定で、書類の名前に引きずられない。
+
+```
+作品.nanovid/
+  project.json    編集内容（Project を JSON にしたもの）
+  Recordings/     このアプリで録音した音声（rec-20261110-153000.wav）
+```
+
+UTI は `com.hashrock.nanovid.project`（`com.apple.package` に適合）。書き出し宣言と
+書類の種類は `Nanovid-Info.plist` にある。Finder でダブルクリックするか Dock の
+アイコンへ落とすと、いまの窓で開く（1 プロジェクト 1 窓）。
+
+素材の置き場所は 2 通り。
+
+| | `project.json` の中での持ち方 |
+|---|---|
+| 取り込んだ素材（動画・画像・音声） | 外に置いたまま参照する。書類と同じフォルダ以下にあれば相対パス（書類のあるフォルダが基準）、離れていれば絶対パス。開き直すための bookmark を添える |
+| 録音 | 書類の中にある。`"embedded": true` を付け、書類からの相対パス（`Recordings/rec-….wav`）で持つ。bookmark は持たない |
+
+フォルダごと移動しても開けるし、書類の名前を変えても・書類だけ別の場所へ動かしても
+録音はついてくる。別名で保存すると、録音は新しい書類の中へ写る（元の書類はそのまま）。
+読み込んだあとのメモリの上では、録音の path は絶対パスに直してあり、`embedded` は
+付かない（`ProjectIO.load` / `save`）。
+
+### 以前の形式
+
+0.4 までの `.nanovid` は JSON 1 ファイルで、録音はプロジェクトの隣の `Recordings/` か、
+ユーザーが選んだフォルダに置いていた。App Sandbox の下では「開いた書類の隣」に
+書けないので、録音を書類の中へ入れた。
+
+- 古い形式は読める。開いて保存すると、その場で同じ名前のパッケージに置き換わる
+  （まだ保存していないうちは、ファイルは古い形式のまま）。古い形式へは書き戻さない。
+- 古いプロジェクトの録音は、取り込んだ素材と同じ扱いで外に置いたままになる
+  （パッケージの中へは動かさない）。
+- 拡張子は同じでも、フォルダでない `.nanovid` はパッケージの種類に当たらず、
+  システムは別の種類（`dyn.…`）を振る。開くパネルでは両方を選べるようにし
+  （`ProjectIO.openableTypes`）、Finder からは拡張子で引き受けている。
+- パッケージになった書類は、0.4 以前の版では開けない。
+
+### 外へ出すもの
+
+書類の中身は Finder からは見えないので、ほかのアプリへ渡すものは書き出しで出す。
+いまあるのは MP4 の書き出し（保存パネルで場所を選ぶ）。書類の中の録音も、
+タイムラインに載っていれば書き出しに入る（`PackageExportTests`）。録音した WAV
+そのものを取り出したいときは、Finder の「パッケージの内容を表示」から。

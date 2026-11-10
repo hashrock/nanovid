@@ -34,6 +34,8 @@ struct NanovidApp: App {
     }
 
     @State private var store = EditorStore()
+    @Environment(\.openWindow) private var openWindow
+    static let mainWindowID = "main"
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     /// ヘルプメニューから開くページ。
@@ -46,7 +48,10 @@ struct NanovidApp: App {
     var body: some Scene {
         // 1 プロジェクトを 1 つの窓で編集する作り。窓を閉じたら終了する
         // （AppDelegate）。
-        WindowGroup {
+        // 書類を渡されて起動したとき用に、窓を出す手段を AppDelegate へ渡しておく
+        // （AppDelegate.openPendingDocument）。
+        let _ = appDelegate.openMainWindow = { [openWindow] in openWindow(id: Self.mainWindowID) }
+        WindowGroup(id: Self.mainWindowID) {
             ContentView(store: store)
                 .frame(minWidth: 1100, minHeight: 700)
                 .onAppear(perform: openProjectFromArguments)
@@ -56,6 +61,10 @@ struct NanovidApp: App {
                 .modifier(MCPServerLink(store: store))
                 #endif
         }
+        // 書類を開く知らせ（Finder でのダブルクリックなど）で、SwiftUI に新しい窓を
+        // 作らせない。1 プロジェクト 1 窓なので、AppDelegate が受けていまの窓で開く
+        // （application(_:open:)）。任せると、開くたびに見えない窓が増える。
+        .handlesExternalEvents(matching: [])
         // テスト中は最初の窓を開かせない。
         .defaultLaunchBehavior(Self.isRunningTests ? .suppressed : .presented)
         .windowToolbarStyle(.unified)
@@ -71,9 +80,6 @@ struct NanovidApp: App {
                 Divider()
                 // 開いたときの案内を「あとで」にした場合の入口。
                 Button("素材の場所を指定…") { store.locateMissingMedia() }
-                // 録音の保存先は決め打ちにせず、ユーザーに選んでもらう（App Review 2.4.5(i)）。
-                // 初めて録音するときにも聞くが、あとから変えるための入口。
-                Button("録音の保存先を選ぶ…") { store.chooseRecordingsDirectory() }
             }
             CommandGroup(replacing: .saveItem) {
                 // .saveItem を置き換えると標準の「閉じる」も消えるので置き直す。
@@ -167,8 +173,16 @@ struct NanovidApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 窓が出たときに AppDelegateLink が渡す。
-    weak var store: EditorStore?
-    private weak var mainWindow: NSWindow?
+    weak var store: EditorStore? {
+        didSet { openPendingDocument() }
+    }
+    private weak var mainWindow: NSWindow? {
+        didSet { openPendingDocument() }
+    }
+    /// Finder から開くよう言われたが、まだ窓の用意ができていなくて開けていない書類。
+    private var pendingDocument: URL?
+    /// メインの窓を出す。NanovidApp が渡す（SwiftUI の openWindow）。
+    var openMainWindow: (() -> Void)?
     private var closeGuard: WindowCloseGuard?
 
     /// 窓を閉じる確認が済んだ。続く終了で同じことを聞き直さない。
@@ -176,6 +190,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         !NanovidApp.isRunningTests
+    }
+
+    /// Finder で .nanovid をダブルクリックした・Dock のアイコンへ落としたとき。
+    /// 1 プロジェクト 1 窓なので、新しい窓は作らず、いまの窓で開き直す。
+    ///
+    /// SwiftUI の onOpenURL には書類を開く知らせが来ないので、ここで受ける。
+    /// 起動と同時に来たときはまだ窓の用意ができていないので、できるまで持っておく。
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let url = urls.first(where: { $0.pathExtension == ProjectIO.fileExtension }) else { return }
+        pendingDocument = url
+        openPendingDocument()
+    }
+
+    private func openPendingDocument() {
+        guard pendingDocument != nil else { return }
+        guard let store, mainWindow != nil else {
+            // 書類を渡されて起動したとき、SwiftUI は最初の窓を出さない（書類を開く側が
+            // 出すものと見なす）。出さないと窓の無いアプリになるので、こちらで出す。
+            // 窓ができると store と mainWindow が入り、もう一度ここへ来る。
+            DispatchQueue.main.async { [self] in
+                if mainWindow == nil, pendingDocument != nil { openMainWindow?() }
+            }
+            return
+        }
+        guard let url = pendingDocument else { return }
+        pendingDocument = nil
+        // 次のランループで。未保存の確認のアラートを起動の途中で出さないため。
+        DispatchQueue.main.async {
+            guard store.documentURL?.standardizedFileURL.path != url.standardizedFileURL.path,
+                  store.confirmDiscardIfNeeded() else { return }
+            store.open(url: url)
+        }
     }
 
     @MainActor

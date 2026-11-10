@@ -33,7 +33,7 @@ final class AudioRecorder {
         }
     }
 
-    /// 録音を開始する。出力先は呼び出し側が決める（既定ではプロジェクトの隣）。
+    /// 録音を開始する。出力先は呼び出し側が決める（書類の中の Recordings/）。
     @discardableResult
     func start(to url: URL) async -> Bool {
         guard !isRecording else { return false }

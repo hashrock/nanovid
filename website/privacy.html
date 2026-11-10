@@ -36,9 +36,9 @@
         <dt>素材と書き出したファイル</dt>
         <dd>あなたが選んだ動画・音声・画像を読み込み、あなたが選んだ場所に動画を書き出します。元のファイルは書き換えません。</dd>
         <dt>プロジェクトファイル（.nanovid）</dt>
-        <dd>編集の内容と、素材の場所（ファイルのパスと、開き直したときに素材を読むための macOS のブックマーク）を保存します。プロジェクトファイルを人に渡すと、素材の場所の情報も一緒に渡ります。</dd>
+        <dd>編集の内容と、素材の場所（ファイルのパスと、開き直したときに素材を読むための macOS のブックマーク）、このアプリで録音した音声を保存します。プロジェクトファイルを人に渡すと、素材の場所の情報と録音した音声も一緒に渡ります。</dd>
         <dt>マイクの音声</dt>
-        <dd>ナレーションを録音するときだけマイクを使います。録音は WAV ファイルとして、プロジェクトの隣の「Recordings」フォルダか、「ムービー」フォルダの「Nanovid Recordings」に保存します。</dd>
+        <dd>ナレーションを録音するときだけマイクを使います。録音は WAV ファイルとして、プロジェクトファイル（.nanovid）の中に保存します。0.4 以前の版では、プロジェクトの隣の「Recordings」フォルダか、録音のときに選んだフォルダに保存していました。</dd>
         <dt>音声認識</dt>
         <dd>字幕の自動生成では、macOS に組み込まれた音声認識で、タイムラインの音声を Mac の中で書き起こします。音声は外部へ送りません。初めて使う言語では、macOS が Apple から言語モデルを取り寄せることがあります。これは macOS の機能で、あなたの音声は含まれません。</dd>
         <dt>設定</dt>
@@ -71,9 +71,9 @@
         <dt>Media and exported files</dt>
         <dd>The app reads the video, audio and images you choose and exports videos to the location you choose. Your original files are never modified.</dd>
         <dt>Project files (.nanovid)</dt>
-        <dd>A project file stores your edits and where your media is (file paths and macOS bookmarks that let the app read the media when you reopen the project). If you give a project file to someone, this location information goes with it.</dd>
+        <dd>A project file stores your edits, where your media is (file paths and macOS bookmarks that let the app read the media when you reopen the project), and the audio you recorded in the app. If you give a project file to someone, this location information and your recordings go with it.</dd>
         <dt>Microphone audio</dt>
-        <dd>The microphone is used only while you record narration. Recordings are saved as WAV files in a “Recordings” folder next to the project, or in a folder you choose the first time you record (you can change it with File › Choose Recordings Folder…).</dd>
+        <dd>The microphone is used only while you record narration. Recordings are saved as WAV files inside the project file (.nanovid). Version 0.4 and earlier saved them in a “Recordings” folder next to the project, or in a folder you chose when recording.</dd>
         <dt>Speech recognition</dt>
         <dd>Automatic captions use the speech recognition built into macOS to transcribe the timeline audio on your Mac. Your audio is not sent anywhere. The first time you use a language, macOS may download a language model from Apple. This is a macOS feature and does not include your audio.</dd>
         <dt>Settings</dt>
