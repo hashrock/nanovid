@@ -11,6 +11,8 @@ struct LibraryView: View {
     }
 
     @State private var tab: Tab = .assets
+    /// 素材の一覧で選んでいるもの。まとめて書き出す・取り除くのに使う。
+    @State private var selectedAssetIDs: Set<UUID> = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,19 +40,20 @@ struct LibraryView: View {
         VStack(spacing: 0) {
             // 空のときは何も出さない。狭い幅で不格好に折り返すうえ、
             // 下の「読み込む」とドロップで十分わかる。
-            List {
+            List(selection: $selectedAssetIDs) {
                 ForEach(store.project.assets) { asset in
                     AssetRow(asset: asset, fps: store.project.canvas.fps)
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) { place(asset) }
-                        .contextMenu {
-                            Button("再生ヘッドの位置に置く") { place(asset) }
-                            Divider()
-                            Button("素材を取り除く", role: .destructive) { remove(asset) }
-                        }
                 }
             }
             .listStyle(.inset)
+            // 右クリックは「選んでいるもの全部」か「選んでいない 1 行」に効く
+            // （Finder と同じ）。ダブルクリックは置く。
+            .contextMenu(forSelectionType: UUID.self) { ids in
+                assetMenu(for: ids)
+            } primaryAction: { ids in
+                assets(ids).forEach(place)
+            }
 
             Divider()
             HStack {
@@ -66,6 +69,30 @@ struct LibraryView: View {
         .dropDestination(for: URL.self) { urls, _ in
             Task { @MainActor in _ = await store.importAssets(urls: urls) }
             return true
+        }
+    }
+
+    private func assets(_ ids: Set<UUID>) -> [MediaAsset] {
+        store.project.assets.filter { ids.contains($0.id) }
+    }
+
+    @ViewBuilder
+    private func assetMenu(for ids: Set<UUID>) -> some View {
+        let chosen = assets(ids)
+        if !chosen.isEmpty {
+            Button("再生ヘッドの位置に置く") { chosen.forEach(place) }
+            Divider()
+            // 録音は書類の中にあって Finder からは見えないので、外へ写す入口を置く。
+            // 以前の版が書類の外に置いた録音にも同じように効く。
+            let recordings = store.recordings(among: ids)
+            if recordings.count == 1 {
+                Button("録音を書き出す…") { store.exportRecordingsWithPanel(ids) }
+            } else if recordings.count > 1 {
+                Button("\(recordings.count) 個の録音を書き出す…") { store.exportRecordingsWithPanel(ids) }
+            }
+            Button("Finder で表示") { store.revealInFinder(ids) }
+            Divider()
+            Button("素材を取り除く", role: .destructive) { chosen.forEach(remove) }
         }
     }
 
@@ -99,6 +126,7 @@ struct LibraryView: View {
             return
         }
         store.edit { $0.assets.removeAll { $0.id == asset.id } }
+        selectedAssetIDs.remove(asset.id)
     }
 
     // MARK: - テンプレート

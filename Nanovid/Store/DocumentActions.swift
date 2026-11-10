@@ -187,7 +187,7 @@ extension EditorStore {
         }
     }
 
-    private func presentError(_ title: String, _ detail: String) {
+    func presentError(_ title: String, _ detail: String) {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = title
