@@ -1,3 +1,5 @@
+// App Store 用ビルドには入れない（README「App Store 用ビルドと MCP」）。
+#if !APPSTORE
 import Testing
 import Foundation
 @testable import Nanovid
@@ -181,3 +183,4 @@ struct MCPTests {
         #expect(!MCPServer.isLocalOrigin("null"))
     }
 }
+#endif

@@ -15,8 +15,13 @@
 # プロビジョニングプロファイルは、書き出しのときに Xcode が用意する
 # （-allowProvisioningUpdates。ここで Apple と通信する）。
 #
-# Developer ID で直接配るビルドは Scripts/release.sh。Archive は同じ Release 構成で、
-# 書き出しのときに App Store 用の署名に掛け直す。
+# Developer ID で直接配るビルドは Scripts/release.sh。Archive は同じ Release 構成に
+# NANOVID_APPSTORE=YES を足して作り、書き出しのときに App Store 用の署名に掛け直す。
+#
+# NANOVID_APPSTORE=YES は「App Store 用ビルド」の切り替え。AI から操作するための
+# MCP サーバ（コード・メニュー・文言・待ち受けの権限 network.server）をコンパイルの
+# 段階で落とす。Xcode の Product > Archive はこの切り替えが入らず MCP 入りに
+# なるので、App Store に出すものは必ずこのスクリプトで作る。
 #
 set -e
 cd "$(dirname "$0")/.."
@@ -45,12 +50,13 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 BUILD=$(git rev-list --count HEAD)
 
-echo "Archive 中 (Release・ビルド番号 $BUILD)…"
+echo "Archive 中 (Release・App Store 用・ビルド番号 $BUILD)…"
 rm -rf "$ARCHIVE"
 mkdir -p "$OUT"
 LOG=$(mktemp -t nanovid-archive)
 if ! xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Release \
-     -archivePath "$ARCHIVE" archive CURRENT_PROJECT_VERSION="$BUILD" >"$LOG" 2>&1; then
+     -archivePath "$ARCHIVE" archive CURRENT_PROJECT_VERSION="$BUILD" \
+     NANOVID_APPSTORE=YES >"$LOG" 2>&1; then
     echo "Archive に失敗しました:" >&2
     grep -E "error:" "$LOG" >&2 || tail -30 "$LOG" >&2
     rm -f "$LOG"
@@ -84,6 +90,9 @@ for key in NSMicrophoneUsageDescription NSSpeechRecognitionUsageDescription LSAp
 done
 [ -f "$APP/Contents/Resources/en.lproj/InfoPlist.strings" ] \
     && ok "用途説明の英訳" || fail "InfoPlist.strings（英語）が入っていません"
+
+# MCP が入っていないこと（文字列・シンボル・文言の表・待ち受けの権限）。
+Scripts/check-no-mcp.sh "$APP" || PROBLEMS=$((PROBLEMS + 1))
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$INFO")
 echo "  版 $VERSION / ビルド $(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$INFO")"

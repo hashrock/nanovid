@@ -26,6 +26,8 @@ Recordings/
 
 # ただし合成の土台に使う同梱素材は追跡する
 !Nanovid/Resources/blank.mp4
+# テスト用の素材も追跡する（数 KB）。これが無いと CI で重い層が落ちる。
+!NanovidTests/Fixtures/*
 
 # 配布物
 dist/

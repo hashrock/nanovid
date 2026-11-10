@@ -1,3 +1,5 @@
+// App Store 用ビルドには入れない（README「App Store 用ビルドと MCP」）。
+#if !APPSTORE
 import Foundation
 
 /// MCP の JSON-RPC を受け答えする部分。HTTP からは切り離してあり、
@@ -97,3 +99,4 @@ enum MCPJSON {
         String(decoding: data(value, pretty: pretty), as: UTF8.self)
     }
 }
+#endif

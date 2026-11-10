@@ -10,9 +10,9 @@ import Foundation
 ///     Scripts/test.sh          速い層だけ
 ///     Scripts/test.sh --all    全部（CI と同じ）
 ///
-/// 切り替えは環境変数 `NANOVID_TESTS`。xcodebuild へは
-/// `TEST_RUNNER_NANOVID_TESTS=all` の形で渡すと、テストを動かす側の
-/// プロセスに入る。Xcode から全部走らせたいときはスキームの Test →
+/// 切り替えは環境変数 `NANOVID_TESTS`。xcodebuild を動かす側の環境変数に
+/// `TEST_RUNNER_NANOVID_TESTS=all` を置くと、頭を外してテストを動かす側の
+/// プロセスに入る（xcodebuild の引数として渡しても届かない）。Xcode から全部走らせたいときはスキームの Test →
 /// Arguments に同じ名前で `all` を足す。
 enum TestTier {
 

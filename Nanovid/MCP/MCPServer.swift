@@ -1,3 +1,5 @@
+// App Store 用ビルドには入れない（README「App Store 用ビルドと MCP」）。
+#if !APPSTORE
 import Foundation
 import Network
 
@@ -197,3 +199,4 @@ struct HTTPResponse {
         }
     }
 }
+#endif

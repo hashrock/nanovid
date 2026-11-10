@@ -48,7 +48,12 @@ jobs:
       - name: テスト（速い層だけ・手元と同じ経路）
         run: Scripts/test.sh --skip-l10n
 
+      # TEST_RUNNER_ を付けた環境変数が、頭を外してテストのプロセスに入る。
+      # xcodebuild の引数として渡すと届かず、重い層が黙って全部飛ぶ。
+      # 飛んでいないことも見る（重い層のスイートが 1 つでも「飛ばした」なら落とす）。
       - name: テスト（重い層も含めて全部）
+        env:
+          TEST_RUNNER_NANOVID_TESTS: all
         run: |
           set -o pipefail
           xcodebuild test \
@@ -56,8 +61,11 @@ jobs:
             -scheme Nanovid \
             -configuration Debug \
             -destination 'platform=macOS' \
-            -resultBundlePath TestResults.xcresult \
-            TEST_RUNNER_NANOVID_TESTS=all
+            -resultBundlePath TestResults.xcresult | tee "$RUNNER_TEMP/test.log" | tail -40
+          if grep -q "重い層。Scripts/test.sh --all" "$RUNNER_TEMP/test.log"; then
+            echo "重い層が飛ばされています" >&2
+            exit 1
+          fi
 
       # 描画から書き出しまで、GUI なしで通す経路。ここが一番の本番に近い。
       - name: 書き出しまで通す（--selftest）
@@ -68,6 +76,22 @@ jobs:
             | awk -F' = ' '/ BUILT_PRODUCTS_DIR/{print $2; exit}')
           "$products/Nanovid.app/Contents/MacOS/Nanovid" \
             --selftest "$RUNNER_TEMP/nanovid-selftest"
+
+      # App Store 用ビルドは MCP をコンパイルから外す（NANOVID_APPSTORE=YES）。
+      # #if の片側だけ壊れても気づけるよう、こちらの構成でもテストを通し、
+      # できたアプリに MCP が残っていないことを見る。署名は要らないので外す。
+      # selftest が使う成果物を作り直してしまうので、最後に置く。
+      - name: App Store 用ビルドでもテストが通ること
+        run: Scripts/test.sh --skip-l10n --appstore
+
+      - name: App Store 用ビルドに MCP が入っていないこと
+        run: |
+          set -o pipefail
+          xcodebuild -project Nanovid.xcodeproj -scheme Nanovid -configuration Release \
+            -derivedDataPath "$RUNNER_TEMP/appstore-build" build \
+            NANOVID_APPSTORE=YES CODE_SIGNING_ALLOWED=NO | tail -5
+          Scripts/check-no-mcp.sh \
+            "$RUNNER_TEMP/appstore-build/Build/Products/Release/Nanovid.app"
 
       - name: 失敗したら結果を残す
         if: failure()

@@ -7,6 +7,7 @@
 #   Scripts/test.sh --only HeadlessRenderTests
 #                                        スイート（または 1 件）だけ走らせる
 #   Scripts/test.sh --release            Release 構成で走らせる
+#   Scripts/test.sh --appstore           App Store 用ビルド（MCP 抜き）で走らせる
 #   Scripts/test.sh --verbose            xcodebuild の出力をそのまま流す
 #   Scripts/test.sh --skip-l10n          文言カタログの検査を飛ばす
 #
@@ -22,11 +23,13 @@ TIER=fast
 ONLY=""
 VERBOSE=0
 L10N=1
+APPSTORE=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --all)      TIER=all ;;
         --release)  CONFIG=Release ;;
+        --appstore) APPSTORE=1 ;;
         --debug)    CONFIG=Debug ;;
         --verbose)  VERBOSE=1 ;;
         --skip-l10n) L10N=0 ;;
@@ -60,16 +63,28 @@ fi
 set -- test -project Nanovid.xcodeproj -scheme Nanovid -configuration "$CONFIG" \
        -destination "platform=macOS"
 
+# 表示用。${} でくくらないと、sh が後ろの全角文字まで変数名として読む。
+LABEL="${CONFIG}"
+
+# App Store 用ビルドは MCP をコンパイルから外す（Scripts/appstore.sh と同じ切り替え）。
+# MCP のテストも一緒に外れる。
+if [ "$APPSTORE" = 1 ]; then
+    set -- "$@" NANOVID_APPSTORE=YES
+    LABEL="${LABEL}・App Store 用"
+fi
+
 if [ -n "$ONLY" ]; then
     set -- "$@" "-only-testing:NanovidTests/$ONLY"
 fi
 
-# TEST_RUNNER_ を付けた設定は、テストを動かす側のプロセスの環境変数として入る。
+# TEST_RUNNER_ を付けた環境変数は、頭を外してテストを動かす側のプロセスに入る。
+# xcodebuild の引数（ビルド設定）として渡しても届かない。Xcode 26.4 で確かめたら、
+# 引数で渡していたあいだ重い層は全部「飛ばした」になっていて、それでも緑だった。
 if [ "$TIER" = all ]; then
-    set -- "$@" TEST_RUNNER_NANOVID_TESTS=all
-    echo "テスト実行中 ($CONFIG・重い層も含む)…"
+    export TEST_RUNNER_NANOVID_TESTS=all
+    echo "テスト実行中 (${LABEL}・重い層も含む)…"
 else
-    echo "テスト実行中 ($CONFIG・速い層だけ。全部走らせるなら --all)…"
+    echo "テスト実行中 (${LABEL}・速い層だけ。全部走らせるなら --all)…"
 fi
 
 START=$(date +%s)

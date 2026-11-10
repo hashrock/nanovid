@@ -1,3 +1,5 @@
+// App Store 用ビルドには入れない（README「App Store 用ビルドと MCP」）。
+#if !APPSTORE
 import AppKit
 import AVFoundation
 import Foundation
@@ -720,3 +722,4 @@ enum MCPTools {
 
     private static func seconds(_ t: Double) -> String { String(format: "%.3fs", t) }
 }
+#endif
