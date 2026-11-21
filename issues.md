@@ -142,10 +142,17 @@ carve.nanovid（クリップ 47 本、うちテキスト 39）で:
 # 組み立て・1 コマの描画・命令列の連続性を、プロジェクトを開かずに見る
 Nanovid --inspect path/to/movie.nanovid [秒]
 
+# 好きな時刻のコマを PNG に書く。自前の合成（direct）と AVFoundation の経路（player）の
+# 両方で描いて比べ、差があれば差分画像（-diff.png）と report.json を残す。終了コード 2 = 差あり。
+# --at を省くと、見えるレイヤーの組み合わせが変わる区間ごとに 1 枚描く。
+Nanovid --render path/to/movie.nanovid [--at 0.5,1.5] [--out dir] [--path direct|player|both]
+#                                      [--sources decoded|stub] [--tolerance 0.002]
+
 # 書き出しを通して、尺・フレーム数・範囲の画素一致・倍速を見る
 Nanovid --selftest /tmp/nanovid-selftest
 
-# 性質テストとヘッドレス描画テスト
+# 性質テストとヘッドレス描画テスト。描画の「変えても絵は変わらないはず」は
+# RenderInvarianceTests（重い層。Scripts/test.sh --all）
 xcodebuild test -project Nanovid.xcodeproj -scheme Nanovid
 ```
 
