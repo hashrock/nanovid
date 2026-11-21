@@ -173,12 +173,20 @@ final class EditorStore {
         let snapshot = project
         let base = baseURL
         isBuilding = true
-        defer { isBuilding = false }
+        // 古い組み直しが後から終わっても、新しい組み直しの表示を消さない。
+        defer { if generation == buildGeneration { isBuilding = false } }
 
         do {
-            let built = try await Task.detached(priority: .userInitiated) {
+            // detached は呼び出し元のキャンセルを引き継がないので、手で伝える。
+            // 伝えないと、連続編集で要らなくなった組み立てが最後まで走り続ける。
+            let buildTask = Task.detached(priority: .userInitiated) {
                 try await CompositionBuilder.build(project: snapshot, baseURL: base)
-            }.value
+            }
+            let built = try await withTaskCancellationHandler {
+                try await buildTask.value
+            } onCancel: {
+                buildTask.cancel()
+            }
             guard generation == buildGeneration else { return }
 
             let item = AVPlayerItem(asset: built.composition)
@@ -186,11 +194,16 @@ final class EditorStore {
             item.audioMix = built.audioMix
             item.seekingWaitsForVideoCompositionRendering = true
 
-            let resume = isPlaying
             player.replaceCurrentItem(with: item)
             watchForPlaybackFailure(of: item)
             await seekBounded(to: min(currentTime, built.duration).cmTime)
-            if resume { player.play() }
+
+            // シークを待つあいだに次の組み直しや一時停止が来ていたら、ここでは何もしない。
+            // 古い組み直しが、止めた再生を勝手に始めたり、新しいエラー表示を消したりしないように。
+            guard generation == buildGeneration, player.currentItem === item else { return }
+            // 再生していたかは「いま」の状態で決める。組み直しを始めた時点の値だと、
+            // シーク中に止めても再生が始まってしまう。
+            if isPlaying { player.play() }
             buildError = nil
         } catch is CancellationError {
             return
@@ -214,15 +227,22 @@ final class EditorStore {
     /// 普段は数十 ms で済むので、1 秒待って来なければ先へ進む。
     private func seekBounded(to time: CMTime) async {
         let player = self.player
-        await withTaskGroup(of: Void.self) { group in
-            group.addTask {
-                await player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero)
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(1))
-            }
-            await group.next()
-            group.cancelAll()
+        await Self.waitBounded(timeout: 1) { done in
+            player.seek(to: time, toleranceBefore: .zero, toleranceAfter: .zero) { _ in done() }
+        }
+    }
+
+    /// 完了の知らせか時間切れの早いほうまで待つ。
+    ///
+    /// TaskGroup で競わせる形にはしない。グループはキャンセルした子の終わりも待つので、
+    /// キャンセルに応えない待ち（完了の来ない seek など）があると抜けられない。
+    /// - Parameter start: 処理を始め、終わったら渡された関数を呼ぶ。何度呼んでもよい。
+    static func waitBounded(timeout: Double,
+                            _ start: (@escaping @Sendable () -> Void) -> Void) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let once = ResumeOnce(continuation)
+            start { once.resume() }
+            DispatchQueue.global().asyncAfter(deadline: .now() + timeout) { once.resume() }
         }
     }
 
@@ -325,5 +345,23 @@ final class EditorStore {
     private func refreshHistoryFlags() {
         canUndo = !undoStack.isEmpty
         canRedo = !redoStack.isEmpty
+    }
+}
+
+/// continuation を一度だけ再開する。完了と時間切れのどちらが先に来てもよいように。
+private final class ResumeOnce: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    init(_ continuation: CheckedContinuation<Void, Never>) {
+        self.continuation = continuation
+    }
+
+    func resume() {
+        lock.lock()
+        let c = continuation
+        continuation = nil
+        lock.unlock()
+        c?.resume()
     }
 }
