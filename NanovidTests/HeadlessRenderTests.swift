@@ -47,6 +47,23 @@ struct HeadlessRenderTests {
                 "背景色 #202020 のはずが \(c)")
     }
 
+    @Test("ロックしたトラックの文字も描かれる")
+    func lockedTrackStillRenders() async throws {
+        var project = try makeProject()
+        project.tracks[1].clips = [Clip(name: "字幕", start: 1, duration: 2,
+                                        content: .text(TextInstance(
+                                            templateID: project.textTemplates[0].id,
+                                            props: ["text": .string("ロック中でも出る")])))]
+        // 字幕が始まる前の時刻を「何も無い絵」として比べる。
+        let background = try #require(try await HeadlessRender.frame(of: project, at: 0.5))
+        let unlocked = try #require(try await HeadlessRender.frame(of: project, at: 1.5))
+        project.tracks[1].isLocked = true
+        let locked = try #require(try await HeadlessRender.frame(of: project, at: 1.5))
+
+        #expect(unlocked.difference(from: background) > 0, "字幕が描かれていない")
+        #expect(locked.difference(from: unlocked) == 0, "ロックで見た目が変わった")
+    }
+
     @Test("フェードの途中は背景に溶けていく")
     func fadeBlendsTowardTheBackground() async throws {
         var project = try makeProject()

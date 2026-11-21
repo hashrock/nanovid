@@ -227,7 +227,8 @@ struct TextTemplate: Identifiable, Codable, Hashable {
     var props: [PropDef]
 
     var defaultProps: [String: PropValue] {
-        Dictionary(uniqueKeysWithValues: props.map { ($0.key, $0.defaultValue) })
+        // 編集中は key が一時的に重なりうる。uniqueKeysWithValues だと落ちるので先勝ちにする。
+        Dictionary(props.map { ($0.key, $0.defaultValue) }) { first, _ in first }
     }
 
     func propDef(for key: String) -> PropDef? { props.first { $0.key == key } }
@@ -245,5 +246,108 @@ struct TextInstance: Codable, Hashable {
 
     func resolvedProps(in template: TextTemplate) -> [String: PropValue] {
         template.defaultProps.merging(props) { _, override in override }
+    }
+}
+
+// MARK: - 複製と props の付け替え
+
+extension TextTemplate {
+
+    /// ノード ID を振り直した複製。
+    ///
+    /// 背景板の追従先（fitToNodeID）も新しい ID へ付け替える。
+    /// 付け替えないと追従先が見つからず、背景板が文字量に追従しなくなる。
+    func duplicated(name: String) -> TextTemplate {
+        var copy = self
+        copy.id = UUID()
+        copy.name = name
+        var newIDs: [UUID: UUID] = [:]
+        for node in nodes { newIDs[node.id] = UUID() }
+        copy.nodes = nodes.map { node in
+            var n = node
+            n.id = newIDs[node.id] ?? UUID()
+            if case .rect(var spec) = n.kind, let target = spec.fitToNodeID {
+                spec.fitToNodeID = newIDs[target] ?? target
+                n.kind = .rect(spec)
+            }
+            return n
+        }
+        return copy
+    }
+
+    /// 旧版から props の key がどう変わったか。PropDef の id で突き合わせる。
+    /// 値は新しい key。消えた prop は含まない。
+    func renamedKeys(from old: TextTemplate) -> [String: String] {
+        var map: [String: String] = [:]
+        for def in old.props {
+            if let now = props.first(where: { $0.id == def.id }) { map[def.key] = now.key }
+        }
+        return map
+    }
+
+    /// 旧版からの props の変更（key の変更・削除）を、ノードの参照へ反映する。
+    ///
+    /// - key を変えた prop を指す参照は、新しい key へ付け替える。
+    /// - 消した prop を指す参照は、その既定値の固定値にする。
+    ///   参照先が無いと文字が空になって消えるため。
+    func reconcilingProps(from old: TextTemplate) -> TextTemplate {
+        let renamed = renamedKeys(from: old)
+        let current = Set(props.map(\.key))
+        guard renamed.contains(where: { $0.key != $0.value })
+                || old.props.contains(where: { renamed[$0.key] == nil }) else { return self }
+
+        func fix(_ ref: ValueRef) -> ValueRef {
+            guard let key = ref.boundKey else { return ref }
+            if let newKey = renamed[key] { return .prop(newKey) }
+            if current.contains(key) { return ref }
+            if let removed = old.propDef(for: key) { return .literal(removed.defaultValue) }
+            return ref
+        }
+
+        var copy = self
+        copy.nodes = nodes.map { node in
+            var n = node
+            switch n.kind {
+            case .text(var spec):
+                spec.text = fix(spec.text)
+                spec.color = fix(spec.color)
+                spec.strokeColor = fix(spec.strokeColor)
+                spec.shadowColor = fix(spec.shadowColor)
+                n.kind = .text(spec)
+            case .rect(var spec):
+                spec.fill = fix(spec.fill)
+                n.kind = .rect(spec)
+            }
+            return n
+        }
+        return copy
+    }
+}
+
+extension TextInstance {
+
+    /// テンプレートの props の変更に合わせて、上書き値を付け替える。
+    ///
+    /// key を変えた prop の値は新しい key へ移す。消えた prop の値と、
+    /// 型が変わって合わなくなった値は捨てる（既定値が使われる）。
+    func migrating(from old: TextTemplate, to new: TextTemplate) -> TextInstance {
+        let renamed = new.renamedKeys(from: old)
+        var copy = self
+        copy.props = [:]
+        for (key, value) in props {
+            let target: String?
+            if let newKey = renamed[key] {
+                target = newKey
+            } else if old.propDef(for: key) == nil {
+                // 旧版に定義の無い値。新版で定義されたならそのまま使う。
+                target = key
+            } else {
+                target = nil
+            }
+            guard let target, let def = new.propDef(for: target), def.type == value.type
+            else { continue }
+            copy.props[target] = value
+        }
+        return copy
     }
 }

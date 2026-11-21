@@ -86,9 +86,15 @@ final class TextRasterizer {
         // 2) 実際に描かれる範囲＋影/縁取りの余裕をとって、描画バッファのサイズを決める。
         //    折り返し幅ではなく行の実測幅で囲むので、短い字幕ではバッファがぐっと小さくなる。
         let maxStroke = layouts.values.map(\.strokePoints).max() ?? 0
-        let margin = max(canvas.height * 0.03, maxStroke * 1.5)
+        let maxShadow = layouts.values.map(\.shadowPoints).max() ?? 0
+        let margin = max(canvas.height * 0.03, maxStroke * 1.5, maxShadow)
         var bounds = layouts.values.map(\.inkRect).reduce(CGRect.null) { $0.union($1) }
-        bounds = bounds.insetBy(dx: -margin, dy: -margin).intersection(CGRect(origin: .zero, size: canvas))
+        // キャンバスでは切らない。クリップの移動・縮小は描いたあとに掛かるので、
+        // ここで切ると画面内へ戻しても欠けたままになる。外へ大きく外れた配置で
+        // バッファが際限なく大きくならないよう、キャンバスの周囲 1 枚ぶんで止める。
+        let limit = CGRect(origin: .zero, size: canvas)
+            .insetBy(dx: -canvas.width, dy: -canvas.height)
+        bounds = bounds.insetBy(dx: -margin, dy: -margin).intersection(limit)
         guard !bounds.isNull, bounds.width >= 1, bounds.height >= 1 else { return nil }
         bounds = bounds.integral
 
@@ -141,11 +147,13 @@ final class TextRasterizer {
         var strokeFramesetter: CTFramesetter?
         /// 縁取りの実太さ(pt)。バッファの余白計算に使う。
         var strokePoints: CGFloat = 0
+        /// 影が字からはみ出す最大距離(pt)。ぼかしとずれの和。バッファの余白計算に使う。
+        var shadowPoints: CGFloat = 0
     }
 
     private func measureText(node: TemplateNode, spec: TextNodeSpec,
                              props: [String: PropValue], canvas: CGSize) -> NodeLayout? {
-        let string = spec.text.resolve(props, defaults: [:])?.stringValue ?? ""
+        let string = spec.text.resolve(props, defaults: [:])?.displayText ?? ""
         guard !string.isEmpty else { return nil }
 
         let attr = attributedString(spec, text: string, props: props, canvas: canvas, pass: .fill)
@@ -169,8 +177,15 @@ final class TextRasterizer {
             strokeFS = CTFramesetterCreateWithAttributedString(strokeAttr)
             strokePoints = spec.strokeWidth * spec.font.pointSize(in: canvas)
         }
+        var shadowPoints: CGFloat = 0
+        if spec.shadowRadius > 0 {
+            let offset = max(abs(spec.shadowOffset.x), abs(spec.shadowOffset.y))
+            // CoreGraphics のぼかしは指定値より少し広がるので 2 倍見ておく。
+            shadowPoints = (spec.shadowRadius * 2 + offset) * canvas.height
+        }
         return NodeLayout(rect: rect, inkRect: ink, framesetter: fs,
-                          strokeFramesetter: strokeFS, strokePoints: strokePoints)
+                          strokeFramesetter: strokeFS, strokePoints: strokePoints,
+                          shadowPoints: shadowPoints)
     }
 
     /// 整列を踏まえて、枠 rect の中で実際に文字が乗る範囲を求める。

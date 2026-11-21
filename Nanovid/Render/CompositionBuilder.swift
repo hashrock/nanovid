@@ -63,7 +63,8 @@ enum CompositionBuilder {
         var audioParams: [CMPersistentTrackID: AVMutableAudioMixInputParameters] = [:]
         var z = 0
 
-        for track in project.tracks where !track.isLocked {
+        // ロックは「編集できない」だけ。描画からは外さない。
+        for track in project.tracks {
             for clip in track.clips.sorted(by: { $0.start < $1.start }) {
                 z += 1
                 switch clip.content {
