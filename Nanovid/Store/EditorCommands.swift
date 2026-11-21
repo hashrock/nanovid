@@ -509,10 +509,22 @@ extension EditorStore {
 
     // MARK: - テンプレート
 
+    /// テンプレートを保存する。既存のものなら、props の key の変更・削除・型の変更を
+    /// ノードの参照と、そのテンプレートを使う全クリップの上書き値へ反映する。
+    /// 反映しないと参照が切れ、文字が空になって消える。
     func upsertTemplate(_ template: TextTemplate) {
         edit { p in
             if let i = p.textTemplates.firstIndex(where: { $0.id == template.id }) {
-                p.textTemplates[i] = template
+                let old = p.textTemplates[i]
+                let new = template.reconcilingProps(from: old)
+                p.textTemplates[i] = new
+                for ti in p.tracks.indices {
+                    for ci in p.tracks[ti].clips.indices {
+                        guard case .text(let inst) = p.tracks[ti].clips[ci].content,
+                              inst.templateID == new.id else { continue }
+                        p.tracks[ti].clips[ci].content = .text(inst.migrating(from: old, to: new))
+                    }
+                }
             } else {
                 p.textTemplates.append(template)
             }
@@ -521,11 +533,9 @@ extension EditorStore {
     }
 
     func duplicateTemplate(_ id: UUID) {
-        guard var t = project.template(id) else { return }
-        t.id = UUID()
-        t.name = LName(t.name) + L(" のコピー")
-        t.nodes = t.nodes.map { var n = $0; n.id = UUID(); return n }
-        edit { $0.textTemplates.append(t) }
+        guard let t = project.template(id) else { return }
+        let copy = t.duplicated(name: LName(t.name) + L(" のコピー"))
+        edit { $0.textTemplates.append(copy) }
     }
 
     func removeTemplate(_ id: UUID) {

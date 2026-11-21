@@ -306,11 +306,8 @@ struct TemplateEditorView: View {
     private var footer: some View {
         HStack {
             Button("複製して新規に") {
-                guard var copy = draft else { return }
-                copy.id = UUID()
-                copy.name = LName(copy.name) + L(" のコピー")
-                copy.nodes = copy.nodes.map { var n = $0; n.id = UUID(); return n }
-                store.upsertTemplate(copy)
+                guard let draft else { return }
+                store.upsertTemplate(draft.duplicated(name: LName(draft.name) + L(" のコピー")))
                 dismiss()
             }
             Spacer()
