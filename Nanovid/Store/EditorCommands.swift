@@ -265,12 +265,14 @@ extension EditorStore {
                     var left = clip
                     left.duration = offset
                     left.fade.outDuration = 0
+                    left.fade = left.fade.clamped(to: left.duration)
 
                     var right = clip
                     right.id = UUID()
                     right.start = t
                     right.duration = clip.duration - offset
                     right.fade.inDuration = 0
+                    right.fade = right.fade.clamped(to: right.duration)
                     if case .media(let assetID, let sourceStart) = clip.content {
                         right.content = .media(assetID: assetID, sourceStart: sourceStart + offset)
                     }
@@ -394,6 +396,7 @@ extension EditorStore {
             var c = p.tracks[ti].clips[ci]
             c.start += delta
             c.duration -= delta
+            c.fade = c.fade.clamped(to: c.duration)
             if case .media(let assetID, let sourceStart) = c.content {
                 c.content = .media(assetID: assetID, sourceStart: max(0, sourceStart + delta))
             }
@@ -410,7 +413,10 @@ extension EditorStore {
         let duration = min(limit, max(project.canvas.frameDuration,
                                       project.canvas.snap(newEnd) - clip.start))
         guard abs(duration - clip.duration) > 1e-9 else { return }
-        edit { $0.tracks[ti].clips[ci].duration = duration }
+        edit { p in
+            p.tracks[ti].clips[ci].duration = duration
+            p.tracks[ti].clips[ci].fade = p.tracks[ti].clips[ci].fade.clamped(to: duration)
+        }
     }
 
     // MARK: - クリップ属性

@@ -109,7 +109,7 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
             guard let buffer = sourceFrame(trackID) else { return nil }
             var image = CIImage(cvPixelBuffer: buffer)
             if !preferred.isIdentity {
-                image = image.transformed(by: preferred)
+                image = image.transformed(by: Self.ciPreferredTransform(from: preferred))
                 // 回転で原点がずれるので左下に寄せ直す。
                 let e = image.extent
                 image = image.transformed(by: CGAffineTransform(translationX: -e.minX, y: -e.minY))
@@ -129,6 +129,13 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
                                               transform: layer.transform,
                                               canvas: canvas))
         }
+    }
+
+    /// 左上原点（AVFoundation）の preferredTransform を、左下原点（Core Image）の変換へ移す。
+    /// Y 軸を反転して掛けて戻す共役変換。これをしないと 90° と 270° が逆向き（180° さかさま）になる。
+    static func ciPreferredTransform(from preferred: CGAffineTransform) -> CGAffineTransform {
+        let flip = CGAffineTransform(scaleX: 1, y: -1)
+        return flip.concatenating(preferred).concatenating(flip)
     }
 
     /// 映像を「キャンバスに収める」基準配置にしたうえで、クリップの変形を適用する。

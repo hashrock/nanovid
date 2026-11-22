@@ -216,6 +216,18 @@ struct RenderCommandTests {
             try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--at", "x"])
         }
         #expect(throws: RenderCommand.UsageError.self) {
+            try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--at", "nan"])
+        }
+        #expect(throws: RenderCommand.UsageError.self) {
+            try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--at", "inf"])
+        }
+        #expect(throws: RenderCommand.UsageError.self) {
+            try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--tolerance", "nan"])
+        }
+        #expect(throws: RenderCommand.UsageError.self) {
+            try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--tolerance", "inf"])
+        }
+        #expect(throws: RenderCommand.UsageError.self) {
             try RenderCommand.parse(["Nanovid", "--render", "a.nanovid", "--path", "gpu"])
         }
     }

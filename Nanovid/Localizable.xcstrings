@@ -696,6 +696,16 @@
         }
       }
     },
+    "キャンバスの設定が正しくありません。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid canvas settings."
+          }
+        }
+      }
+    },
     "クリップ" : {
       "comment" : "タイムライン上の 1 本の素材。名前が無いクリップの表示名にも使う。",
       "localizations" : {

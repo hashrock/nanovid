@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import ImageIO
 
 /// 素材として使えない理由。取り込みの時点で言う。
 ///
@@ -127,6 +128,14 @@ enum ImageProbe {
               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
               let w = props[kCGImagePropertyPixelWidth] as? Double,
               let h = props[kCGImagePropertyPixelHeight] as? Double else { return nil }
-        return CGSize(width: w, height: h)
+        // EXIF Orientation 5〜8 は 90° / 270° 回転を含むので、見た目の縦横が入れ替わる。
+        let orientation = (props[kCGImagePropertyOrientation] as? UInt32)
+            .flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        switch orientation {
+        case .leftMirrored, .right, .rightMirrored, .left:
+            return CGSize(width: h, height: w)
+        default:
+            return CGSize(width: w, height: h)
+        }
     }
 }

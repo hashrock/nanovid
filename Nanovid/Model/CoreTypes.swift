@@ -161,6 +161,20 @@ struct Fade: Codable, Hashable {
 
     static let none = Fade()
 
+    /// クリップの長さの中に収める。インとアウトの和が尺を超えるときは比を保って縮める。
+    func clamped(to duration: Double) -> Fade {
+        let limit = max(0, duration)
+        var i = inDuration.isFinite ? max(0, inDuration) : 0
+        var o = outDuration.isFinite ? max(0, outDuration) : 0
+        if i + o > limit {
+            guard limit > 0 else { return .none }
+            let scale = limit / (i + o)
+            i *= scale
+            o *= scale
+        }
+        return Fade(inDuration: i, outDuration: o)
+    }
+
     /// クリップ内相対時刻 t における不透明度係数。
     func factor(at t: Double, clipDuration: Double) -> Double {
         var f = 1.0

@@ -476,6 +476,7 @@ enum MCPTools {
                     if let volume { c.volume = max(0, volume) }
                     if let fadeIn { c.fade.inDuration = max(0, min(c.duration, fadeIn)) }
                     if let fadeOut { c.fade.outDuration = max(0, min(c.duration, fadeOut)) }
+                    c.fade = c.fade.clamped(to: c.duration)
                     if let position { c.transform.position = position }
                     if let scale { c.transform.scale = max(0.01, scale) }
                     if let rotation { c.transform.rotation = rotation }
