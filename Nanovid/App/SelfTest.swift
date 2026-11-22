@@ -173,6 +173,9 @@ enum SelfTest {
                     if instructions[i].timeRange.start != instructions[i - 1].timeRange.end { gap = true }
                 }
                 print("  連続: \(gap ? "途切れあり" : "問題なし")")
+                for clip in built.skipped {
+                    print("  描かないクリップ: \(clip.name)（\(clip.reason)）")
+                }
 
                 if let hit = instructions.compactMap({ $0 as? NanovidInstruction })
                     .first(where: { $0.timeRange.containsTime(at.cmTime) }) {

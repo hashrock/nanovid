@@ -72,6 +72,17 @@ struct CanvasSpec: Codable, Hashable {
         (seconds * Double(fps)).rounded() / Double(fps)
     }
 
+    /// `end` で終わる映像の、最後のコマが始まる時刻。
+    ///
+    /// 映像の命令は [始まり, 終わり) の半開区間なので、終わりちょうどのコマは無い。
+    /// 書き出しも最後に出すのはこのコマ。末尾へ寄せた再生ヘッドの絵はこれに揃える。
+    func lastFrameStart(before end: Double) -> Double {
+        guard end > 0 else { return 0 }
+        let fps = Double(self.fps)
+        // end がコマ境界ちょうどなら 1 つ前、半端ならそのコマの頭。
+        return max(0, ((end * fps - 1e-6).rounded(.up) - 1) / fps)
+    }
+
     func frameIndex(at seconds: Double) -> Int {
         Int((seconds * Double(fps)).rounded())
     }

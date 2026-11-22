@@ -25,18 +25,25 @@ enum InstructionPlan {
 
     /// 区間へ割る。返す区間は `[.zero, end]` を隙間なく、長さ 0 なく覆う。
     ///
+    /// 時刻は 1/600 秒の格子に丸めて扱う。編集でコマ境界に揃えてあるので普段は
+    /// 丸めの影響は無いが、1/1200 秒より短いレイヤーは区間を持てず描かれない。
+    ///
     /// AVFoundation は命令列が合成の全域を覆っていないと何も描かない。
     /// 隙間のあるタイムラインでプレビューが真っ黒になったのがこれだった。
     static func segments(for layers: [PlannedLayer], end: CMTime) -> [PlannedSegment] {
         guard end > .zero else { return [] }
 
         let boundaries = self.boundaries(for: layers, end: end)
+        // 見えるかどうかも、境界と同じく CMTime に落とした端で決める。
+        // Double の端と区間の中央を比べると、丸めた境界とわずかに食い違うことがある。
+        let edges = layers.map { (clamped($0.start, to: end), clamped($0.end, to: end)) }
         // 連続する境界から順に作るので、隙間も長さ 0 も生まれない。
         return (0..<max(0, boundaries.count - 1)).map { i in
             let range = CMTimeRange(start: boundaries[i], end: boundaries[i + 1])
-            let mid = (boundaries[i].secondsOrZero + boundaries[i + 1].secondsOrZero) / 2
+            // 区間は境界どうしの間なので、レイヤーの端をまたぐことはない。
+            // 始まりが区間の頭以前で、終わりが区間の終わり以降なら全体で見えている。
             let active = layers.indices
-                .filter { layers[$0].start <= mid && mid < layers[$0].end }
+                .filter { edges[$0].0 <= range.start && range.end <= edges[$0].1 }
                 .sorted { layers[$0].z < layers[$1].z }
             return PlannedSegment(range: range, layerIndices: active)
         }

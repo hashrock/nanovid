@@ -105,7 +105,12 @@ struct InstructionPlanPropertyTests {
 
     @Test("ひとつの区間の中ではレイヤーの構成が変わらない", arguments: PropertyRuns.seeds(400))
     func layersAreConstantWithinASegment(seed: Int) {
-        let (layers, _, segments) = makePlan(seed: seed)
+        let (layers, end, segments) = makePlan(seed: seed)
+        // レイヤーの端は、境界と同じく 1/600 秒へ丸めたもので見る。映像の素材も
+        // その丸めた時刻に置かれる（insertTimeRange）ので、見え始めはそこになる。
+        let edges = layers.map {
+            (InstructionPlan.clamped($0.start, to: end), InstructionPlan.clamped($0.end, to: end))
+        }
         for segment in segments {
             let from = segment.range.start.secondsOrZero
             let to = segment.range.end.secondsOrZero
@@ -113,8 +118,10 @@ struct InstructionPlanPropertyTests {
             for i in 1..<8 {
                 let t = from + (to - from) * Double(i) / 8
                 guard t > from, t < to else { continue }
+                // 見る時刻のほうは丸めない。区間の内側の点として比べる。
+                let at = CMTime(seconds: t, preferredTimescale: 1_000_000_000)
                 let active = layers.indices
-                    .filter { layers[$0].start <= t && t < layers[$0].end }
+                    .filter { edges[$0].0 <= at && at < edges[$0].1 }
                     .sorted { layers[$0].z < layers[$1].z }
                 #expect(active == segment.layerIndices, """
                     seed \(seed): \(String(format: "%.9f", t)) 秒で構成が違う

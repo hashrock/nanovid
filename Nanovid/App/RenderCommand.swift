@@ -14,7 +14,8 @@ import Foundation
 /// - `--sources decoded|stub`  direct で使う素材フレーム。既定は decoded。
 /// - `--tolerance 割合`  both で「違う」とみなす、差のある画素の割合。既定 0.002（0.2%）。
 ///
-/// 出力先には PNG と report.json（各コマのレイヤー構成・差）を置く。
+/// 出力先には PNG と report.json（各コマのレイヤー構成・差・描けなかったクリップ）を置く。
+/// 終わりちょうどやその先の時刻は、最後のコマとして描く。
 /// 終了コード: 0 = 問題なし、1 = 失敗、2 = both で差が許容を超えたコマがある。
 enum RenderCommand {
 
@@ -117,6 +118,8 @@ enum RenderCommand {
         var sources: String
         var tolerance: Double
         var frames: [FrameEntry]
+        /// 置いてあるのに描けなかったクリップ。
+        var skipped: [SkippedClip]
         var ok: Bool
     }
 
@@ -158,6 +161,9 @@ enum RenderCommand {
         let times = options.times ?? renderer.segmentMidpoints()
         print("プロジェクト: \(project.name)  \(project.canvas.width)x\(project.canvas.height)"
               + String(format: " / 尺 %.2f 秒 / %d コマ", project.duration, times.count))
+        for clip in renderer.built.skipped {
+            print("  描かないクリップ: \(clip.name)（\(clip.reason)）")
+        }
 
         var entries: [Report.FrameEntry] = []
         var allOK = true
@@ -215,6 +221,7 @@ enum RenderCommand {
             sources: options.sources.rawValue,
             tolerance: options.tolerance,
             frames: entries,
+            skipped: renderer.built.skipped,
             ok: allOK)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
