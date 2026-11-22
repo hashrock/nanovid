@@ -50,7 +50,7 @@ enum RenderCommand {
             case "--at":
                 let raw = try value(arg)
                 let times = raw.split(separator: ",").map { Double($0.trimmingCharacters(in: .whitespaces)) }
-                guard !times.isEmpty, times.allSatisfy({ $0 != nil }) else {
+                guard !times.isEmpty, times.allSatisfy({ $0?.isFinite == true }) else {
                     throw UsageError("--at は「0.5,1.5」のように秒をカンマで並べます: \(raw)")
                 }
                 options.times = times.compactMap { $0 }
@@ -73,7 +73,9 @@ enum RenderCommand {
                 options.sources = sources
             case "--tolerance":
                 let raw = try value(arg)
-                guard let t = Double(raw), t >= 0 else { throw UsageError("--tolerance は 0 以上の数です: \(raw)") }
+                guard let t = Double(raw), t.isFinite, t >= 0 else {
+                    throw UsageError("--tolerance は 0 以上の数です: \(raw)")
+                }
                 options.tolerance = t
             default:
                 // ほかの起動オプション（-NS… など）は読み飛ばす。
@@ -167,7 +169,13 @@ enum RenderCommand {
 
         var entries: [Report.FrameEntry] = []
         var allOK = true
+        var usedStems: [String: Int] = [:]
         for time in times {
+            let baseStem = String(format: "t%08.3f", time)
+            let occurrence = (usedStems[baseStem] ?? 0) + 1
+            usedStems[baseStem] = occurrence
+            let stem = occurrence == 1 ? baseStem : "\(baseStem)-\(occurrence)"
+
             var entry = Report.FrameEntry(time: time, files: [:],
                                           description: renderer.describe(at: time))
             var frames: [FrameRenderer.Path: RGBAFrame] = [:]
@@ -176,7 +184,7 @@ enum RenderCommand {
             for path in options.paths {
                 do {
                     let image = try await renderer.render(at: time, path: path, sources: options.sources)
-                    let file = String(format: "t%08.3f-%@.png", time, path.rawValue)
+                    let file = "\(stem)-\(path.rawValue).png"
                     try image.writePNG(to: options.out.appendingPathComponent(file))
                     entry.files[path.rawValue] = file
                     images[path] = image
@@ -199,7 +207,7 @@ enum RenderCommand {
                     allOK = false
                     line += "  ← 違う"
                     if let diff = direct.differenceImage(from: player) {
-                        let file = String(format: "t%08.3f-diff.png", time)
+                        let file = "\(stem)-diff.png"
                         try diff.writePNG(to: options.out.appendingPathComponent(file))
                         entry.files["diff"] = file
                     }

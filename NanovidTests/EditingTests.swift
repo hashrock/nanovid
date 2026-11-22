@@ -122,6 +122,27 @@ struct EditingTests {
         #expect(clip.duration >= store.project.canvas.frameDuration - 1e-9)
     }
 
+    @Test("トリムや分割で縮めても、フェードの合計が尺を超えない")
+    func trimAndSplitClampFades() {
+        let (store, _, clipID) = makeStore()   // 0..4 秒
+        store.updateClip(clipID) { $0.fade = Fade(inDuration: 1.5, outDuration: 1.5) }
+
+        store.trimRight(clipID: clipID, to: 1.0)
+        let afterRight = store.project.clip(clipID)!
+        #expect(afterRight.fade.inDuration + afterRight.fade.outDuration <= afterRight.duration + 1e-9)
+
+        store.trimLeft(clipID: clipID, to: 0.6)
+        let afterLeft = store.project.clip(clipID)!
+        #expect(afterLeft.fade.inDuration + afterLeft.fade.outDuration <= afterLeft.duration + 1e-9)
+
+        store.seek(to: 0.7)
+        store.selectedClipIDs = [clipID]
+        store.splitAtPlayhead()
+        for clip in store.project.tracks.flatMap(\.clips) {
+            #expect(clip.fade.inDuration + clip.fade.outDuration <= clip.duration + 1e-9)
+        }
+    }
+
     @Test("映像クリップは音声トラックへ移せない")
     func videoClipCannotMoveToAudioTrack() {
         let (store, _, clipID) = makeStore()

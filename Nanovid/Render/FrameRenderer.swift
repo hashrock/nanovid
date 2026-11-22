@@ -322,22 +322,45 @@ struct RGBAFrame {
     /// 全画素の成分ごとの差の平均（0…255）。0 なら同じ絵。大きさが違えば 255。
     func difference(from other: RGBAFrame) -> Double {
         guard width == other.width, height == other.height else { return 255 }
-        var total = 0
-        for i in 0..<pixels.count {
-            total += abs(Int(pixels[i]) - Int(other.pixels[i]))
+        let count = pixels.count
+        guard count > 0 else { return 0 }
+        let total: Int = pixels.withUnsafeBufferPointer { a in
+            other.pixels.withUnsafeBufferPointer { b in
+                guard let pa = a.baseAddress, let pb = b.baseAddress else { return 0 }
+                var sum = 0
+                for i in 0..<count {
+                    let d = Int(pa[i]) - Int(pb[i])
+                    sum += d < 0 ? -d : d
+                }
+                return sum
+            }
         }
-        return Double(total) / Double(max(1, pixels.count))
+        return Double(total) / Double(count)
     }
 
     /// 差が `threshold` を超える画素の割合（0…1）。
     /// 平均だけだと「小さな文字が 1 つ消えた」が埋もれるので、こちらも見る。
     func changedFraction(from other: RGBAFrame, threshold: Int = 16) -> Double {
         guard width == other.width, height == other.height else { return 1 }
-        var changed = 0
-        for p in stride(from: 0, to: pixels.count, by: 4) {
-            var d = 0
-            for c in 0..<3 { d = max(d, abs(Int(pixels[p + c]) - Int(other.pixels[p + c]))) }
-            if d > threshold { changed += 1 }
+        let count = pixels.count
+        let changed: Int = pixels.withUnsafeBufferPointer { a in
+            other.pixels.withUnsafeBufferPointer { b in
+                guard let pa = a.baseAddress, let pb = b.baseAddress else { return 0 }
+                var hits = 0
+                var p = 0
+                while p < count {
+                    let dr = Int(pa[p]) - Int(pb[p])
+                    let dg = Int(pa[p + 1]) - Int(pb[p + 1])
+                    let db = Int(pa[p + 2]) - Int(pb[p + 2])
+                    if (dr < 0 ? -dr : dr) > threshold
+                        || (dg < 0 ? -dg : dg) > threshold
+                        || (db < 0 ? -db : db) > threshold {
+                        hits += 1
+                    }
+                    p += 4
+                }
+                return hits
+            }
         }
         return Double(changed) / Double(max(1, width * height))
     }

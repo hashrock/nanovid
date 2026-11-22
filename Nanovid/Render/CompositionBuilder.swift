@@ -24,6 +24,7 @@ struct BuiltComposition {
 
 enum BuildError: LocalizedError {
     case emptyProject
+    case invalidCanvas
     case assetMissing(String)
     case unreadable(String)
     /// この Mac にデコーダが無い。別の Mac で作ったプロジェクトを開くと起きうる。
@@ -32,6 +33,7 @@ enum BuildError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .emptyProject: return L("タイムラインに何も置かれていません。")
+        case .invalidCanvas: return L("キャンバスの設定が正しくありません。")
         case .assetMissing(let name): return L("素材が見つかりません: \(name)")
         case .unreadable(let name): return L("素材を読み込めません: \(name)")
         case .undecodable(let name): return L("「\(name)」はこの Mac で再生できない形式です。")
@@ -40,9 +42,11 @@ enum BuildError: LocalizedError {
 }
 
 /// 使い回す合成トラックと、そこに詰め終わっている末尾時刻。
+/// insertTimeRange が使う CMTime 基準で持つ。Double で比べると 1/600 秒の丸め差で
+/// 既存区間の内側へ割り込んでしまい、後ろの区間が押し出されることがある。
 private struct TrackSlot {
     let track: AVMutableCompositionTrack
-    var end: Double
+    var end: CMTime
 }
 
 /// 区間分割前の中間表現。
@@ -65,6 +69,9 @@ enum CompositionBuilder {
     static func build(project: Project, baseURL: URL?,
                       constantFrameRate: Bool = false) async throws -> BuiltComposition {
         let canvas = project.canvas
+        guard canvas.width > 0, canvas.height > 0, canvas.fps > 0 else {
+            throw BuildError.invalidCanvas
+        }
         let canvasSize = canvas.size
         let composition = AVMutableComposition()
 
@@ -125,19 +132,24 @@ enum CompositionBuilder {
                     }
 
                     let av = AssetCache.shared.asset(for: url)
-                    let sourceRange = CMTimeRange(start: sourceStart.cmTime, duration: clip.duration.cmTime)
+                    guard clip.duration > 0 else { continue }
+                    let clipStart = max(0, clip.start).cmTime
+                    let clipDuration = clip.duration.cmTime
+                    guard clipDuration > .zero else { continue }
+                    let sourceRange = CMTimeRange(start: sourceStart.cmTime, duration: clipDuration)
 
                     // 映像
                     if track.kind == .video, !track.isHidden,
                        let vTrack = try await av.loadTracks(withMediaType: .video).first,
                        let compTrack = claimTrack(in: &videoPool, mediaType: .video,
-                                                  composition: composition, clip: clip) {
+                                                  composition: composition,
+                                                  start: clipStart, duration: clipDuration) {
                         // 取り込み時にも見ているが、プロジェクトは別の Mac から来ることがある。
                         // AVPlayer は黙って黒を流すので、ここで言わないと誰も言わない。
                         guard try await vTrack.load(.isDecodable) else {
                             throw BuildError.undecodable(asset.displayName)
                         }
-                        try compTrack.insertTimeRange(sourceRange, of: vTrack, at: clip.start.cmTime)
+                        try compTrack.insertTimeRange(sourceRange, of: vTrack, at: clipStart)
                         let preferred = try await vTrack.load(.preferredTransform)
                         pending.append(PendingLayer(
                             source: .media(trackID: compTrack.trackID, preferredTransform: preferred),
@@ -150,11 +162,12 @@ enum CompositionBuilder {
                     if !track.isMuted, clip.volume > 0,
                        let aTrack = try await av.loadTracks(withMediaType: .audio).first,
                        let compTrack = claimTrack(in: &audioPool, mediaType: .audio,
-                                                  composition: composition, clip: clip) {
-                        try compTrack.insertTimeRange(sourceRange, of: aTrack, at: clip.start.cmTime)
+                                                  composition: composition,
+                                                  start: clipStart, duration: clipDuration) {
+                        try compTrack.insertTimeRange(sourceRange, of: aTrack, at: clipStart)
                         let params = audioParams[compTrack.trackID]
                             ?? AVMutableAudioMixInputParameters(track: compTrack)
-                        applyVolume(clip: clip, to: params)
+                        applyVolume(clip: clip, start: clipStart, duration: clipDuration, to: params)
                         audioParams[compTrack.trackID] = params
                     }
                 }
@@ -254,37 +267,106 @@ enum CompositionBuilder {
     private static func claimTrack(in pool: inout [TrackSlot],
                                    mediaType: AVMediaType,
                                    composition: AVMutableComposition,
-                                   clip: Clip) -> AVMutableCompositionTrack? {
-        if let index = pool.firstIndex(where: { $0.end <= clip.start + 1e-6 }) {
-            pool[index].end = clip.end
+                                   start: CMTime,
+                                   duration: CMTime) -> AVMutableCompositionTrack? {
+        let end = start + duration
+        if let index = pool.firstIndex(where: { $0.end <= start }) {
+            pool[index].end = end
             return pool[index].track
         }
         guard let made = composition.addMutableTrack(
             withMediaType: mediaType, preferredTrackID: kCMPersistentTrackID_Invalid) else { return nil }
-        pool.append(TrackSlot(track: made, end: clip.end))
+        pool.append(TrackSlot(track: made, end: end))
         return made
     }
 
     /// クリップ単位の音量とフェードを AVAudioMix のパラメータへ積む。
-    private static func applyVolume(clip: Clip, to p: AVMutableAudioMixInputParameters) {
-        let v = Float(clip.volume)
-        p.setVolume(v, at: clip.start.cmTime)
+    ///
+    /// AVAudioMix はランプの区間が少しでも重なると Obj-C 例外（NSInvalidArgumentException）で
+    /// プロセスごと落ちる。フェードの和を尺へ収めたうえで、CMTime 上でも重ならないように切る。
+    private static func applyVolume(clip: Clip,
+                                    start clipStart: CMTime,
+                                    duration clipDuration: CMTime,
+                                    to p: AVMutableAudioMixInputParameters) {
+        let clipEnd = clipStart + clipDuration
+        guard clipEnd > clipStart else { return }
+        let v = Float(max(0, clip.volume))
+        p.setVolume(v, at: clipStart)
 
-        if clip.fade.inDuration > 0 {
-            p.setVolumeRamp(fromStartVolume: 0, toEndVolume: v,
-                            timeRange: CMTimeRange(start: clip.start.cmTime,
-                                                   duration: clip.fade.inDuration.cmTime))
+        let fade = clip.fade.clamped(to: clip.duration)
+        var inEnd = clipStart
+        if fade.inDuration > 0 {
+            let dur = min(fade.inDuration.cmTime, clipDuration)
+            if dur > .zero {
+                p.setVolumeRamp(fromStartVolume: 0, toEndVolume: v,
+                                timeRange: CMTimeRange(start: clipStart, duration: dur))
+                inEnd = clipStart + dur
+            }
         }
-        if clip.fade.outDuration > 0 {
-            let s = clip.end - clip.fade.outDuration
-            p.setVolumeRamp(fromStartVolume: v, toEndVolume: 0,
-                            timeRange: CMTimeRange(start: s.cmTime,
-                                                   duration: clip.fade.outDuration.cmTime))
+        if fade.outDuration > 0 {
+            let outStart = max(inEnd, clipEnd - fade.outDuration.cmTime)
+            let dur = clipEnd - outStart
+            if dur > .zero {
+                p.setVolumeRamp(fromStartVolume: v, toEndVolume: 0,
+                                timeRange: CMTimeRange(start: outStart, duration: dur))
+            }
         }
     }
 
-    private static func loadImage(_ url: URL) -> CGImage? {
-        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
-        return CGImageSourceCreateImageAtIndex(src, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
+    static func loadImage(_ url: URL) -> CGImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let raw = CGImageSourceCreateImageAtIndex(
+                  src, 0, [kCGImageSourceShouldCache: false] as CFDictionary)
+        else { return nil }
+        let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any]
+        let orientation = (props?[kCGImagePropertyOrientation] as? UInt32)
+            .flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        return orient(raw, orientation)
+    }
+
+    /// EXIF Orientation をピクセルへ焼き込んで正立画像にする。
+    /// そのまま渡すと iPhone の縦写真などが横向きや逆さまに描かれてしまう。
+    private static func orient(_ image: CGImage, _ orientation: CGImagePropertyOrientation) -> CGImage {
+        guard orientation != .up else { return image }
+        let w = CGFloat(image.width)
+        let h = CGFloat(image.height)
+        let swapped: Bool
+        let transform: CGAffineTransform
+        switch orientation {
+        case .up:
+            return image
+        case .upMirrored:
+            swapped = false
+            transform = CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: w, ty: 0)
+        case .down:
+            swapped = false
+            transform = CGAffineTransform(a: -1, b: 0, c: 0, d: -1, tx: w, ty: h)
+        case .downMirrored:
+            swapped = false
+            transform = CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: h)
+        case .leftMirrored:
+            swapped = true
+            transform = CGAffineTransform(a: 0, b: -1, c: -1, d: 0, tx: h, ty: w)
+        case .right:
+            swapped = true
+            transform = CGAffineTransform(a: 0, b: -1, c: 1, d: 0, tx: 0, ty: w)
+        case .rightMirrored:
+            swapped = true
+            transform = CGAffineTransform(a: 0, b: 1, c: 1, d: 0, tx: 0, ty: 0)
+        case .left:
+            swapped = true
+            transform = CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: h, ty: 0)
+        }
+        let outW = Int(swapped ? h : w)
+        let outH = Int(swapped ? w : h)
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil }
+            ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let ctx = CGContext(
+            data: nil, width: outW, height: outH, bitsPerComponent: 8, bytesPerRow: 0,
+            space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return image }
+        ctx.concatenate(transform)
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage() ?? image
     }
 }
