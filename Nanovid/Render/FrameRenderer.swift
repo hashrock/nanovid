@@ -57,9 +57,17 @@ final class FrameRenderer {
 
     var canvasSize: CGSize { project.canvas.size }
 
+    /// 描く時刻を合成の中へ収める。終わりちょうどとその先は、最後のコマにする。
+    /// 書き出しの最後のコマ、プレビューを末尾へ寄せたときの絵と同じになる。
+    func clampedTime(_ time: Double) -> Double {
+        guard time.isFinite else { return 0 }
+        if time >= built.duration { return project.canvas.lastFrameStart(before: built.duration) }
+        return max(0, time)
+    }
+
     /// その時刻の命令。命令列の外なら nil。
     func instruction(at time: Double) -> NanovidInstruction? {
-        let target = time.cmTime
+        let target = clampedTime(time).cmTime
         return instructions.first { $0.timeRange.start <= target && target < $0.timeRange.end }
     }
 
@@ -82,6 +90,7 @@ final class FrameRenderer {
 
     /// 自前の合成を直に呼ぶ。
     func renderDirect(at time: Double, sources: Sources = .stub) throws -> CGImage {
+        let time = clampedTime(time)
         guard let instruction = instruction(at: time) else { throw RenderError.outsideComposition(time) }
         let canvas = canvasSize
         var cache: [CMPersistentTrackID: CVPixelBuffer] = [:]
@@ -104,6 +113,7 @@ final class FrameRenderer {
     /// AVFoundation に描かせる。プレビュー・書き出しと同じ経路。
     /// - Parameter maxWidth: 縮小したいとき。nil ならキャンバスの大きさのまま。
     func renderPlayer(at time: Double, maxWidth: Double? = nil) async throws -> CGImage {
+        let time = clampedTime(time)
         let generator = AVAssetImageGenerator(asset: built.composition)
         generator.videoComposition = built.videoComposition
         generator.requestedTimeToleranceBefore = .zero
@@ -113,7 +123,7 @@ final class FrameRenderer {
             let edge = max(64, min(4096, maxWidth))
             generator.maximumSize = CGSize(width: edge, height: edge)
         }
-        let (image, _) = try await generator.image(at: max(0, time).cmTime)
+        let (image, _) = try await generator.image(at: time.cmTime)
         return image
     }
 
@@ -140,6 +150,7 @@ final class FrameRenderer {
     }
 
     func describe(at time: Double) -> Description? {
+        let time = clampedTime(time)
         guard let instruction = instruction(at: time) else { return nil }
         let layers = instruction.layers.map { layer -> Description.Layer in
             var d = Description.Layer(kind: "", alpha: layer.alpha(at: time),

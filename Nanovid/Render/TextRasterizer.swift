@@ -16,8 +16,8 @@ final class TextRasterizer {
     static let shared = TextRasterizer()
 
     private let lock = NSLock()
-    private var cache: [String: RasterizedText] = [:]
-    private var order: [String] = []
+    private var cache: [CacheKey: RasterizedText] = [:]
+    private var order: [CacheKey] = []
     private let limit = 64
 
     private init() {}
@@ -29,7 +29,7 @@ final class TextRasterizer {
     }
 
     func rasterize(template: TextTemplate, props: [String: PropValue], canvas: CGSize) -> RasterizedText? {
-        let key = cacheKey(template: template, props: props, canvas: canvas)
+        let key = CacheKey(template: template, props: props, canvas: canvas)
         lock.lock()
         if let hit = cache[key] {
             lock.unlock()
@@ -40,8 +40,8 @@ final class TextRasterizer {
         guard let made = render(template: template, props: props, canvas: canvas) else { return nil }
 
         lock.lock()
-        cache[key] = made
-        order.append(key)
+        // 同じ内容を別の呼び出しが先に描き終えていたら、並びを重複させない。
+        if cache.updateValue(made, forKey: key) == nil { order.append(key) }
         while order.count > limit, let oldest = order.first {
             order.removeFirst()
             cache.removeValue(forKey: oldest)
@@ -50,16 +50,20 @@ final class TextRasterizer {
         return made
     }
 
-    private func cacheKey(template: TextTemplate, props: [String: PropValue], canvas: CGSize) -> String {
-        var hasher = Hasher()
-        hasher.combine(template)
-        for k in props.keys.sorted() {
-            hasher.combine(k)
-            hasher.combine(props[k])
+    /// キャッシュのキー。中身そのものを持つので、ハッシュが衝突しても
+    /// 別の内容の画像を返すことはない（辞書が等しさまで確かめる）。
+    private struct CacheKey: Hashable {
+        let template: TextTemplate
+        let props: [String: PropValue]
+        let width: Double
+        let height: Double
+
+        init(template: TextTemplate, props: [String: PropValue], canvas: CGSize) {
+            self.template = template
+            self.props = props
+            self.width = Double(canvas.width)
+            self.height = Double(canvas.height)
         }
-        hasher.combine(canvas.width)
-        hasher.combine(canvas.height)
-        return String(hasher.finalize())
     }
 
     // MARK: - 実描画

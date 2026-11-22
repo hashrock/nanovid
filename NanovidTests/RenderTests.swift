@@ -84,7 +84,8 @@ struct CompositionBuilderTests {
             .first { $0.timeRange.start.seconds >= 1.0 && $0.timeRange.end.seconds <= 2.0 }
         try #require(gap != nil)
         #expect(gap!.layers.isEmpty)
-        #expect(gap!.requiredSourceTrackIDs == nil)
+        // 素材を全部頼む nil ではなく、土台のトラックだけを頼む。
+        #expect(gap!.requiredSourceTrackIDs?.count == 1)
     }
 
     @Test("テキストだけでも映像トラックが用意される")

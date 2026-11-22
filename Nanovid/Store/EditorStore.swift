@@ -136,8 +136,14 @@ final class EditorStore {
         // 尺を超えた位置ではプレビューに「ここから先は空」と出す（PreviewPane）。
         let clamped = max(0, min(timelineEnd, time))
         currentTime = clamped
-        player.seek(to: min(clamped, max(contentEnd, outputEnd)).cmTime,
+        player.seek(to: playerTime(for: clamped, end: max(contentEnd, outputEnd)),
                     toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    /// AVPlayer へ渡す時刻。末尾ちょうどには命令が無く、何が映るかが AVPlayer 任せに
+    /// なるので、最後のコマの頭で止める。書き出しの最後のコマと同じ絵になる。
+    private func playerTime(for time: Double, end: Double) -> CMTime {
+        min(max(0, time), project.canvas.lastFrameStart(before: end)).cmTime
     }
 
     /// 再生ヘッドが書き出す範囲の外にあるか。
@@ -196,7 +202,7 @@ final class EditorStore {
 
             player.replaceCurrentItem(with: item)
             watchForPlaybackFailure(of: item)
-            await seekBounded(to: min(currentTime, built.duration).cmTime)
+            await seekBounded(to: playerTime(for: currentTime, end: built.duration))
 
             // シークを待つあいだに次の組み直しや一時停止が来ていたら、ここでは何もしない。
             // 古い組み直しが、止めた再生を勝手に始めたり、新しいエラー表示を消したりしないように。

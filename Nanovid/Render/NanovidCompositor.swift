@@ -37,10 +37,22 @@ final class NanovidCompositor: NSObject, AVVideoCompositing {
         renderQueue.sync { self.renderContext = newRenderContext }
     }
 
-    func cancelAllPendingVideoCompositionRequests() {}
+    /// 取り消しの世代。取り消すたびに進め、積んだときの世代と違うリクエストは描かずに返す。
+    /// シークを続けたときに、もう要らないコマを描き切ってから新しいコマへ進むのを避ける。
+    private let cancelLock = NSLock()
+    private var cancelGeneration = 0
+
+    func cancelAllPendingVideoCompositionRequests() {
+        cancelLock.withLock { cancelGeneration += 1 }
+    }
 
     func startRequest(_ request: AVAsynchronousVideoCompositionRequest) {
+        let generation = cancelLock.withLock { cancelGeneration }
         renderQueue.async {
+            guard self.cancelLock.withLock({ self.cancelGeneration }) == generation else {
+                request.finishCancelledRequest()
+                return
+            }
             guard let instruction = request.videoCompositionInstruction as? NanovidInstruction else {
                 request.finish(with: CompositorError.badInstruction)
                 return

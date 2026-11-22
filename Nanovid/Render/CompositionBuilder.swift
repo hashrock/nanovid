@@ -2,12 +2,24 @@ import AVFoundation
 import CoreGraphics
 import Foundation
 import ImageIO
+import os
+
+let renderLog = Logger(subsystem: "nanovid", category: "render")
+
+/// 置いてあるのに描かれないクリップ。非表示のトラックのように、わざと描かないものは含めない。
+struct SkippedClip: Codable, Hashable {
+    var clipID: UUID
+    var name: String
+    var reason: String
+}
 
 struct BuiltComposition {
     let composition: AVMutableComposition
     let videoComposition: AVMutableVideoComposition
     let audioMix: AVMutableAudioMix?
     let duration: Double
+    /// 描けずに外したクリップ。「文字が消えた」の手がかりにする。
+    var skipped: [SkippedClip] = []
 }
 
 enum BuildError: LocalizedError {
@@ -62,6 +74,11 @@ enum CompositionBuilder {
         var audioPool: [TrackSlot] = []
         var audioParams: [CMPersistentTrackID: AVMutableAudioMixInputParameters] = [:]
         var z = 0
+        var skipped: [SkippedClip] = []
+        func skip(_ clip: Clip, _ reason: String) {
+            skipped.append(SkippedClip(clipID: clip.id, name: clip.name, reason: reason))
+            renderLog.notice("クリップ「\(clip.name, privacy: .public)」を描かない: \(reason, privacy: .public)")
+        }
 
         // ロックは「編集できない」だけ。描画からは外さない。
         for track in project.tracks {
@@ -69,12 +86,18 @@ enum CompositionBuilder {
                 z += 1
                 switch clip.content {
                 case .text(let instance):
-                    guard track.kind == .video, !track.isHidden,
-                          let template = project.template(instance.templateID) else { continue }
+                    guard track.kind == .video, !track.isHidden else { continue }
+                    guard let template = project.template(instance.templateID) else {
+                        skip(clip, "テンプレートが見つからない")
+                        continue
+                    }
                     let props = instance.resolvedProps(in: template)
                     guard let raster = TextRasterizer.shared.rasterize(
                         template: template, props: props, canvas: canvasSize
-                    ) else { continue }
+                    ) else {
+                        skip(clip, "描くものが無い（文字が空・ノードが全部非表示・キャンバスから遠く外れている）")
+                        continue
+                    }
                     pending.append(PendingLayer(
                         source: .text(image: raster.image, rect: raster.rect),
                         start: clip.start, duration: clip.duration,
@@ -151,7 +174,7 @@ enum CompositionBuilder {
         // 映像パイプラインを回すための土台。空のトラックではフレームが供給されず
         // 出力が途切れるので、同梱の極小ブランク素材をタイムライン全域に敷く。
         // レイヤーとしては合成しないので見た目には現れない。
-        try await insertSpacer(into: composition, upTo: end)
+        let spacerTrackID = try await insertSpacer(into: composition, upTo: end)
 
         // MARK: 区間分割（レイヤー構成が変わる時刻で切る）
         let plan = InstructionPlan.segments(
@@ -168,7 +191,7 @@ enum CompositionBuilder {
             return NanovidInstruction(
                 timeRange: segment.range, layers: active,
                 backgroundColor: canvas.backgroundColor, canvasSize: canvasSize,
-                alwaysRenders: constantFrameRate)
+                alwaysRenders: constantFrameRate, spacerTrackID: spacerTrackID)
         }
 
         let videoComposition = AVMutableVideoComposition()
@@ -186,7 +209,7 @@ enum CompositionBuilder {
         }
 
         return BuiltComposition(composition: composition, videoComposition: videoComposition,
-                                audioMix: mix, duration: end.secondsOrZero)
+                                audioMix: mix, duration: end.secondsOrZero, skipped: skipped)
     }
 
     // MARK: - 土台トラック
@@ -197,15 +220,24 @@ enum CompositionBuilder {
     }()
 
     /// タイムライン全域をブランク素材で埋める。素材が尽きたら先頭から繰り返す。
-    private static func insertSpacer(into composition: AVMutableComposition, upTo total: CMTime) async throws {
+    /// - Returns: 敷いたトラックの ID。敷けなかったら nil。
+    @discardableResult
+    private static func insertSpacer(into composition: AVMutableComposition,
+                                     upTo total: CMTime) async throws -> CMPersistentTrackID? {
         guard let blank = blankAsset,
               let source = try await blank.loadTracks(withMediaType: .video).first,
               let spacer = composition.addMutableTrack(
                   withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)
-        else { return }
+        else {
+            renderLog.error("土台のブランク素材を敷けない。文字だけの区間が描かれないことがある")
+            return nil
+        }
 
         let unit = try await blank.load(.duration)
-        guard unit.isNumeric, unit.seconds > 0, total > .zero else { return }
+        guard unit.isNumeric, unit.seconds > 0, total > .zero else {
+            composition.removeTrack(spacer)
+            return nil
+        }
         var cursor = CMTime.zero
         while cursor < total {
             let remaining = total - cursor
@@ -213,6 +245,7 @@ enum CompositionBuilder {
             try spacer.insertTimeRange(CMTimeRange(start: .zero, duration: step), of: source, at: cursor)
             cursor = cursor + step
         }
+        return spacer.trackID
     }
 
     // MARK: - 補助
