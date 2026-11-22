@@ -560,15 +560,9 @@ enum MCPTools {
         let time = args["time"].flatMap(asDouble) ?? store.currentTime
         let maxWidth = args["max_width"].flatMap(asDouble) ?? 960
         let project = store.project
-        let built = try await CompositionBuilder.build(project: project, baseURL: store.baseURL)
-        let generator = AVAssetImageGenerator(asset: built.composition)
-        generator.videoComposition = built.videoComposition
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-        generator.appliesPreferredTrackTransform = false
-        let edge = max(64, min(4096, maxWidth))
-        generator.maximumSize = CGSize(width: edge, height: edge)
-        let (image, _) = try await generator.image(at: max(0, time).cmTime)
+        // 書き出しと同じ見た目を返すので、組み立ても書き出しと同じ設定にする。
+        let renderer = try await FrameRenderer.make(project: project, baseURL: store.baseURL)
+        let image = try await renderer.renderPlayer(at: time, maxWidth: maxWidth)
         guard let jpeg = NSBitmapImageRep(cgImage: image)
             .representation(using: .jpeg, properties: [.compressionFactor: 0.85]) else {
             throw Failure("Could not encode the frame.")

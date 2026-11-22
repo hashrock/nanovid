@@ -189,36 +189,29 @@ enum SelfTest {
                 }
 
                 // プレビューと同じ経路で 1 枚だけ描かせてみる。
-                let generator = AVAssetImageGenerator(asset: built.composition)
-                generator.videoComposition = built.videoComposition
-                generator.requestedTimeToleranceBefore = .zero
-                generator.requestedTimeToleranceAfter = .zero
-                generator.appliesPreferredTrackTransform = false
+                // 何枚も描いたり、自前の合成と見比べたりするなら --render を使う。
+                let renderer = FrameRenderer(project: project, built: built)
                 do {
                     let firstStarted = Date()
-                    let (image, actual) = try await generator.image(at: at.cmTime)
+                    let image = try await renderer.renderPlayer(at: at)
                     let first = Date().timeIntervalSince(firstStarted) * 1000
                     // 2 枚目はデコーダが起きている状態。スクラブ中の 1 コマはこちらに近い。
                     let nextStarted = Date()
-                    _ = try await generator.image(at: (at + project.canvas.frameDuration).cmTime)
+                    _ = try await renderer.renderPlayer(at: at + project.canvas.frameDuration)
                     let next = Date().timeIntervalSince(nextStarted) * 1000
                     let out = FileManager.default.temporaryDirectory
                         .appendingPathComponent("nanovid-inspect.png")
-                    try NSBitmapImageRep(cgImage: image)
-                        .representation(using: .png, properties: [:])!.write(to: out)
-                    print("描画: 成功 \(image.width)x\(image.height) (実時刻 \(String(format: "%.2f", actual.secondsOrZero)) 秒)")
+                    try image.writePNG(to: out)
+                    print("描画: 成功 \(image.width)x\(image.height)")
                     print(String(format: "  再生経路で 1 コマ: 初回 %.0f ms / 次のコマ %.0f ms", first, next))
                     print("  \(out.path)")
 
-                    // 合成だけを直に呼んだときの速さ。素材のフレームは渡さないので、
-                    // 映像レイヤーは飛ばされ、文字と背景の合成ぶんだけが出る。
-                    if let instruction = built.videoComposition.instructions.first(where: {
-                        $0.timeRange.start <= at.cmTime && at.cmTime < $0.timeRange.end
-                    }) as? NanovidInstruction {
-                        let compositor = NanovidCompositor()
-                        _ = compositor.render(instruction: instruction, at: at)   // 温める
+                    // 合成だけを直に呼んだときの速さ。素材は単色で代用するので、
+                    // デコードを挟まない、合成そのものの取り分が出る。
+                    if let instruction = renderer.instruction(at: at) {
+                        _ = try? renderer.renderDirect(at: at)   // 温める
                         let composeStarted = Date()
-                        for _ in 0..<10 { _ = compositor.render(instruction: instruction, at: at) }
+                        for _ in 0..<10 { _ = try? renderer.renderDirect(at: at) }
                         let perFrame = Date().timeIntervalSince(composeStarted) * 100
                         let textLayers = instruction.layers.filter { $0.trackID == nil }.count
                         print(String(format: "  合成だけ（文字 %d 枚＋背景）: 1 コマ %.1f ms", textLayers, perFrame))
