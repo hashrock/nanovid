@@ -605,6 +605,17 @@
         }
       }
     },
+    "その他の操作" : {
+      "comment" : "タイムライン見出しのオーバーフローメニューのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More actions"
+          }
+        }
+      }
+    },
     "なし" : {
       "localizations" : {
         "en" : {
@@ -672,6 +683,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Inspector"
+          }
+        }
+      }
+    },
+    "インスペクタを開閉 (⌘2)" : {
+      "comment" : "ツールバーのインスペクタ開閉ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show or hide inspector (⌘2)"
           }
         }
       }
@@ -1052,6 +1074,39 @@
         }
       }
     },
+    "トラックを表示" : {
+      "comment" : "非表示の映像トラックを表示に戻す右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Show Track"
+          }
+        }
+      }
+    },
+    "トラックを追加" : {
+      "comment" : "トラック見出し列の追加ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add Track"
+          }
+        }
+      }
+    },
+    "トラックを非表示" : {
+      "comment" : "映像トラックを非表示にする右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide Track"
+          }
+        }
+      }
+    },
     "ノード" : {
       "comment" : "新しく足したレイヤーの既定の名前。",
       "localizations" : {
@@ -1136,12 +1191,34 @@
         }
       }
     },
+    "プロジェクト設定…" : {
+      "comment" : "ファイルメニューからプロジェクト設定シートを開く。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Project Settings…"
+          }
+        }
+      }
+    },
     "ボリューム" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Level"
+          }
+        }
+      }
+    },
+    "マイクから録音" : {
+      "comment" : "マイク録音を開始するメニュー項目。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record from Microphone"
           }
         }
       }
@@ -1162,6 +1239,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Microphone access is not allowed. Allow it in System Settings > Privacy & Security > Microphone."
+          }
+        }
+      }
+    },
+    "ミュート" : {
+      "comment" : "トラックをミュートする右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mute"
+          }
+        }
+      }
+    },
+    "ミュートを解除" : {
+      "comment" : "トラックのミュートを解除する右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unmute"
           }
         }
       }
@@ -1202,6 +1301,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Layers (bottom is front)"
+          }
+        }
+      }
+    },
+    "ロック" : {
+      "comment" : "トラックをロックする右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lock"
+          }
+        }
+      }
+    },
+    "ロックを解除" : {
+      "comment" : "トラックのロックを解除する右クリックメニュー。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlock"
           }
         }
       }
@@ -1425,12 +1546,45 @@
         }
       }
     },
+    "先頭へ" : {
+      "comment" : "再生バーの先頭へ戻るボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Start"
+          }
+        }
+      }
+    },
+    "先頭へ移動" : {
+      "comment" : "再生ヘッドを先頭へ戻すメニュー項目。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to Start"
+          }
+        }
+      }
+    },
     "全体が収まるまで縮小" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Zoom out until everything fits"
+          }
+        }
+      }
+    },
+    "全体が収まるまで縮小 (F)" : {
+      "comment" : "タイムライン全体表示ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom to fit (F)"
           }
         }
       }
@@ -1461,6 +1615,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Play / Pause"
+          }
+        }
+      }
+    },
+    "再生 / 一時停止 (Space)" : {
+      "comment" : "再生ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play / Pause (Space)"
           }
         }
       }
@@ -1502,6 +1667,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Place at Playhead"
+          }
+        }
+      }
+    },
+    "再生ヘッドをここへ移動" : {
+      "comment" : "字幕一覧の行から再生ヘッドをそのクリップ先頭へ動かす。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Move Playhead Here"
           }
         }
       }
@@ -1679,6 +1855,28 @@
         }
       }
     },
+    "動画を書き出す (⌘E)" : {
+      "comment" : "ツールバーの書き出しボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export video (⌘E)"
+          }
+        }
+      }
+    },
+    "動画を書き出す…" : {
+      "comment" : "ファイルメニューから動画書き出しシートを開く。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export Video…"
+          }
+        }
+      }
+    },
     "動画・音声・画像を選んでください" : {
       "localizations" : {
         "en" : {
@@ -1738,6 +1936,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Bottom Right"
+          }
+        }
+      }
+    },
+    "合計 %@" : {
+      "comment" : "複数クリップ選択時の合計尺の表示。%@ はタイムコード。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total %@"
           }
         }
       }
@@ -2002,6 +2211,17 @@
         }
       }
     },
+    "拡大 (+)" : {
+      "comment" : "タイムライン拡大ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom in (+)"
+          }
+        }
+      }
+    },
     "控えめ（1 秒以上の間）" : {
       "localizations" : {
         "en" : {
@@ -2259,6 +2479,28 @@
         }
       }
     },
+    "末尾へ" : {
+      "comment" : "再生バーの末尾へ進むボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to End"
+          }
+        }
+      }
+    },
+    "末尾へ移動" : {
+      "comment" : "再生ヘッドを動画の末尾へ進めるメニュー項目。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Go to End"
+          }
+        }
+      }
+    },
     "本文" : {
       "comment" : "テンプレート内のテキストレイヤーの既定のレイヤー名。",
       "localizations" : {
@@ -2296,6 +2538,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Preparing"
+          }
+        }
+      }
+    },
+    "無音を詰めています" : {
+      "comment" : "無音カット実行中の進捗表示のツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trimming silence"
           }
         }
       }
@@ -2529,6 +2782,17 @@
         }
       }
     },
+    "縮小 (-)" : {
+      "comment" : "タイムライン縮小ボタンのツールチップ。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zoom out (-)"
+          }
+        }
+      }
+    },
     "聞き取り中" : {
       "localizations" : {
         "en" : {
@@ -2557,6 +2821,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Background Color"
+          }
+        }
+      }
+    },
+    "自動" : {
+      "comment" : "動画の範囲がクリップ終端に自動追従しているときの要約表示。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto"
           }
         }
       }
@@ -2881,6 +3156,17 @@
         }
       }
     },
+    "配置をリセット" : {
+      "comment" : "クリップの拡大・位置・不透明度を既定値に戻すボタン。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reset transform"
+          }
+        }
+      }
+    },
     "配置（キャンバス比）" : {
       "localizations" : {
         "en" : {
@@ -2919,6 +3205,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Recordings are saved inside the project. Choose where to save the project first."
+          }
+        }
+      }
+    },
+    "録音を停止" : {
+      "comment" : "録音中の停止ボタン・メニュー項目。",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Recording"
           }
         }
       }

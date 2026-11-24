@@ -5,11 +5,38 @@ import UniformTypeIdentifiers
 struct TimelineView: View {
     @Bindable var store: EditorStore
     @Binding var bottomTab: BottomTab
+    /// 再生操作。プレビューの下に別の行を持たず、この見出し行に並べる（ContentView が渡す）。
+    var transport: AnyView = AnyView(EmptyView())
 
-    static let headerWidth: CGFloat = 176
-    static let laneHeight: CGFloat = 56
-    static let laneGap: CGFloat = 4
-    static let rulerHeight: CGFloat = 24
+    static let headerWidth: CGFloat = 148
+    /// 見出し行の高さ。字幕タブ（TextClipsPane）とそろえる。
+    static let toolbarHeight: CGFloat = 30
+    /// クリップのラベルとアイコンの大きさ。種類は色ではなくアイコンで見分けるので、
+    /// 読める大きさにしておく。
+    static let clipFontSize: CGFloat = 12
+    static let clipIconSize: CGFloat = 12
+    /// トラック（＝クリップ）の高さ。クリップの中身は 1 行のラベル（＋アイコン）だけなので、
+    /// その行の高さに上下の余白を足したぶんで足りる。波形や絵は描かない。
+    static let laneHeight: CGFloat = {
+        let line = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: clipFontSize))
+        return ceil(line) + 2 * clipPadding
+    }()
+    /// クリップの中の、ラベルの上下の余白。
+    static let clipPadding: CGFloat = 4
+    /// クリップの縦の間隔。トラックの並びの間隔として 1 回だけ空け、
+    /// いちばん上（ルーラーの下）といちばん下の外側も同じ幅にする。
+    /// クリップやトラックごとに上下の余白を持たせると、隣り合うところで 2 倍になる。
+    static let laneGap: CGFloat = 3
+    static let rulerHeight: CGFloat = 18
+    /// 横スクロールバーの行の高さ。
+    static let scrollBarHeight: CGFloat = 13
+
+    /// 見出し行・ルーラー・n 本のトラック・横スクロールバーがちょうど収まる高さ。
+    static func fittingHeight(lanes: Int) -> CGFloat {
+        toolbarHeight + 1 + rulerHeight
+            + CGFloat(lanes) * laneHeight + CGFloat(lanes + 1) * laneGap
+            + scrollBarHeight
+    }
     static let minZoom: Double = 8
     static let maxZoom: Double = 600
     /// レーン表示領域の座標空間。ドラッグ中に動かない基準として使う。
@@ -66,12 +93,12 @@ struct TimelineView: View {
 
     /// レーンを縦に並べたときの高さ。
     ///
-    /// 各レーンの下に隙間を入れているが、いちばん下の隙間は数えない。
-    /// 数えると、ちょうど収まる本数でも隙間ぶんだけはみ出したことになり、
-    /// スクロールバーが出っぱなしになる（ホイールもそこへ吸われる）。
+    /// レーンの間と、いちばん上・いちばん下の外側に同じ隙間（laneGap）を空ける。
+    /// fittingHeight と同じ数え方にそろえる。ずれるとちょうど収まる本数でも
+    /// はみ出したことになり、スクロールバーが出っぱなしになる。
     private var lanesHeight: CGFloat {
         guard !lanes.isEmpty else { return 0 }
-        return CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap) - Self.laneGap
+        return CGFloat(lanes.count) * Self.laneHeight + CGFloat(lanes.count + 1) * Self.laneGap
     }
 
     private var maxScrollX: Double {
@@ -110,60 +137,94 @@ struct TimelineView: View {
         HStack(spacing: 10) {
             BottomTabPicker(selection: $bottomTab)
 
-            Divider().frame(height: 16)
+            Divider().frame(height: 14)
 
-            Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                .font(.system(.callout, design: .monospaced))
-            Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
+            transport
 
-            Divider().frame(height: 16)
+            Divider().frame(height: 14)
 
             Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
                 .help("再生ヘッドの位置でクリップを分割 (S)")
-            Button { store.deleteSelection() } label: { Label("削除", systemImage: "trash") }
-                .disabled(store.selectedClipIDs.isEmpty)
-            Button { store.duplicateSelection() } label: {
-                Label("複製", systemImage: "plus.square.on.square")
-            }
-            .disabled(store.selectedClipIDs.isEmpty)
 
             if !store.selectedClipIDs.isEmpty {
-                Divider().frame(height: 16)
+                Button { store.duplicateSelection() } label: {
+                    Label("複製", systemImage: "plus.square.on.square")
+                }
+                .help("複製")
+                Button { store.deleteSelection() } label: { Label("削除", systemImage: "trash") }
+                    .help("削除 (Delete)")
+
+                Divider().frame(height: 14)
                 selectionMenu
             }
 
             if let range = store.pendingExtractRange {
-                Divider().frame(height: 16)
+                Divider().frame(height: 14)
                 extractControl(range)
             }
 
             Spacer()
 
             Menu {
+                Menu("無音を詰める") { SilenceCutMenuItems(store: store) }
+                    .disabled(!store.canCutSilence)
+                Divider()
+                Button("切り抜き開始 (Q)") { store.markExtractStart() }
+                Button("切り抜いて詰める (W)") { store.extractMarkedRange() }
+                    .disabled(store.extractStart == nil)
+                Divider()
+                Toggle("クリップを吸着させる", isOn: $snappingEnabled)
+                Divider()
                 Button("映像トラックを追加") { store.addTrack(kind: .video) }
                 Button("音声トラックを追加") { store.addTrack(kind: .audio) }
             } label: {
-                Label("トラック", systemImage: "plus")
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .help("その他の操作")
 
-            Button { zoomStep(0.8) } label: { Image(systemName: "minus.magnifyingglass") }
-            Slider(value: Binding(
-                get: { pps },
-                set: { zoom(to: $0, anchorX: Double(viewport.width) / 2) }
-            ), in: Self.minZoom...Self.maxZoom)
-            .frame(width: 130)
-            Button { zoomStep(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-            Button { zoomToFit() } label: { Image(systemName: "arrow.left.and.right") }
-                .help("全体が収まるまで縮小")
+            Divider().frame(height: 14)
+
+            HStack(spacing: 5) {
+                Button { zoomStep(0.8) } label: {
+                    Image(systemName: "minus")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .help("縮小 (-)")
+                Slider(value: Binding(
+                    get: { pps },
+                    set: { zoom(to: $0, anchorX: Double(viewport.width) / 2) }
+                ), in: Self.minZoom...Self.maxZoom)
+                .controlSize(.small)
+                .frame(width: 84)
+                Button { zoomStep(1.25) } label: {
+                    Image(systemName: "plus")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .help("拡大 (+)")
+                Button { zoomToFit() } label: {
+                    Image(systemName: "arrow.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .help("全体が収まるまで縮小 (F)")
+                .padding(.leading, 2)
+            }
         }
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)
+        // 30pt の行に収まるよう、見出しのコントロールは小さいサイズにそろえる
+        // （通常サイズのセグメントは 24pt あり、上下に 3pt しか残らない）。
+        .controlSize(.small)
         .padding(.horizontal, 10)
-        .frame(height: 34)
+        .frame(height: Self.toolbarHeight)
     }
 
     /// 切り抜きの範囲を打っているあいだの表示と操作。
@@ -238,19 +299,37 @@ struct TimelineView: View {
 
     private var headerColumn: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(width: Self.headerWidth, height: Self.rulerHeight)
+            HStack {
+                Spacer()
+                Menu {
+                    Button("映像トラックを追加") { store.addTrack(kind: .video) }
+                    Button("音声トラックを追加") { store.addTrack(kind: .audio) }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("トラックを追加")
+            }
+            .padding(.horizontal, 6)
+            .frame(width: Self.headerWidth, height: Self.rulerHeight)
             // GeometryReader で包んで、中身の高さに引きずられないようにする。
             // 並べたヘッダは固定高なので、そのままだとこの列が縮まず、
             // タイムライン全体の最小高さがトラック数ぶんに固定されてしまう。
             // 枠が足りないとはみ出して、上のトランスポートに重なる。
             GeometryReader { _ in
-                VStack(spacing: 0) {
+                VStack(spacing: Self.laneGap) {
                     ForEach(lanes) { track in
                         TrackHeaderView(store: store, track: track)
                             .frame(width: Self.headerWidth, height: Self.laneHeight)
-                            .padding(.bottom, Self.laneGap)
                     }
                 }
+                .padding(.vertical, Self.laneGap)
                 .offset(y: -offsetY)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -271,11 +350,14 @@ struct TimelineView: View {
             // 目盛りの位置まで上がってくるが、clipped() は描画を隠すだけでクリックは
             // 奪ったままになるため、前面に無いと目盛りが押せなくなる。
             ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 0) {
+                // 隙間はトラックの並びの間隔で 1 回だけ。地は隙間も含めて同じグレーにして、
+                // トラックの間に別の色の帯が見えないようにする。
+                VStack(alignment: .leading, spacing: Self.laneGap) {
                     ForEach(lanes) { track in
                         laneView(track)
                     }
                 }
+                .padding(.vertical, Self.laneGap)
                 .offset(x: -offsetX, y: -offsetY)
                 .frame(width: geo.size.width,
                        height: max(0, geo.size.height - Self.rulerHeight),
@@ -293,7 +375,7 @@ struct TimelineView: View {
             .overlay(alignment: .topLeading) { playhead }
             .overlay(alignment: .topLeading) { marqueeOverlay }
             .overlay(alignment: .topTrailing) { verticalScrollBar }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(TimelinePalette.lane)
             // クリップのドラッグはこの空間で測る。クリップ自身は .offset で動くので、
             // ジェスチャをクリップのローカル空間で測ると位置が振動してしまう。
             .coordinateSpace(.named(Self.laneSpaceName))
@@ -326,7 +408,6 @@ struct TimelineView: View {
             }
         }
         .frame(width: contentWidth, height: Self.laneHeight, alignment: .topLeading)
-        .padding(.bottom, Self.laneGap)
         .dropDestination(for: URL.self) { urls, location in
             handleDrop(urls: urls, track: track, at: location)
             return true
@@ -337,7 +418,8 @@ struct TimelineView: View {
 
     private func laneBackground(_ track: Track) -> Color {
         if dropTargetTrack == track.id { return Color.accentColor.opacity(0.18) }
-        return Color(nsColor: .controlBackgroundColor).opacity(track.isHidden ? 0.4 : 0.85)
+        // 地のグレーは下（laneArea）に敷いてある。隠したトラックだけ白っぽく伏せる。
+        return track.isHidden ? Color(nsColor: .windowBackgroundColor).opacity(0.5) : .clear
     }
 
     // MARK: - 右クリックメニュー
@@ -443,9 +525,9 @@ struct TimelineView: View {
     private func trimHandle(clip: Clip, edge: HorizontalEdge,
                             width: CGFloat, visible: Bool) -> some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white.opacity(visible ? 0.55 : 0.001))
+            .fill(Color.primary.opacity(visible ? 0.45 : 0.001))
             .frame(width: width)
-            .padding(.vertical, 6)
+            .padding(.vertical, 3)
             .padding(edge == .leading ? .leading : .trailing, 2)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -586,7 +668,8 @@ struct TimelineView: View {
 
     /// 表示座標の y から段番号を出す。はみ出したぶんは端の段に寄せる。
     private func laneIndex(atViewportY y: Double) -> Int {
-        let local = y - Double(Self.rulerHeight) + offsetY
+        // いちばん上の外側の隙間を引く。レーンの間の隙間は、下のレーンに含める。
+        let local = y - Double(Self.rulerHeight) + offsetY - Double(Self.laneGap)
         let step = Double(Self.laneHeight + Self.laneGap)
         let raw = Int(floor(local / step))
         return min(max(raw, 0), max(0, lanes.count - 1))
@@ -934,7 +1017,7 @@ struct TimelineView: View {
             .padding(.vertical, 3)
             .opacity(maxScrollX > 0 ? 1 : 0)
         }
-        .frame(height: 13)
+        .frame(height: Self.scrollBarHeight)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -1106,7 +1189,7 @@ private struct RulerView: View {
             // 範囲外は目盛りも薄くする。背景の濃淡だけに頼らずに済む。
             let fade = store.project.isInsideOutput(t) ? 1.0 : 0.45
             var line = Path()
-            line.move(to: CGPoint(x: x, y: isMajor ? 4 : 13))
+            line.move(to: CGPoint(x: x, y: isMajor ? 3 : size.height - 5))
             line.addLine(to: CGPoint(x: x, y: size.height))
             context.stroke(line,
                            with: .color(.secondary.opacity((isMajor ? 0.55 : 0.22) * fade)),
@@ -1238,31 +1321,53 @@ private struct TrackHeaderView: View {
     @Bindable var store: EditorStore
     let track: Track
 
+    @State private var isHovered = false
+
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: track.kind == .video ? "film" : "waveform")
+        HStack(spacing: 5) {
+            Image(systemName: ClipKindIcon.name(for: track, project: store.project))
                 .foregroundStyle(.secondary)
                 .font(.caption)
             Text(track.name)
                 .font(.caption)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if track.kind == .video {
+            if track.kind == .video, isHovered || track.isHidden {
                 toggle(systemImage: track.isHidden ? "eye.slash" : "eye", isOn: !track.isHidden) {
                     mutate { $0.isHidden.toggle() }
                 }
             }
-            toggle(systemImage: track.isMuted ? "speaker.slash" : "speaker.wave.2", isOn: !track.isMuted) {
-                mutate { $0.isMuted.toggle() }
+            if isHovered || track.isMuted {
+                toggle(systemImage: track.isMuted ? "speaker.slash" : "speaker.wave.2", isOn: !track.isMuted) {
+                    mutate { $0.isMuted.toggle() }
+                }
             }
-            toggle(systemImage: track.isLocked ? "lock" : "lock.open", isOn: !track.isLocked) {
-                mutate { $0.isLocked.toggle() }
+            if isHovered || track.isLocked {
+                toggle(systemImage: track.isLocked ? "lock" : "lock.open", isOn: !track.isLocked) {
+                    mutate { $0.isLocked.toggle() }
+                }
             }
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            isHovered = inside
+        }
         .contextMenu {
+            if track.kind == .video {
+                Button(track.isHidden ? "トラックを表示" : "トラックを非表示") {
+                    mutate { $0.isHidden.toggle() }
+                }
+            }
+            Button(track.isMuted ? "ミュートを解除" : "ミュート") {
+                mutate { $0.isMuted.toggle() }
+            }
+            Button(track.isLocked ? "ロックを解除" : "ロック") {
+                mutate { $0.isLocked.toggle() }
+            }
+            Divider()
             Button("上へ") { store.moveTrack(id: track.id, offset: 1) }
             Button("下へ") { store.moveTrack(id: track.id, offset: -1) }
             Divider()
@@ -1291,6 +1396,53 @@ private struct TrackHeaderView: View {
 
 // MARK: - クリップ
 
+/// クリップの種類のアイコン。クリップとトラックの見出しで同じものを使う
+/// （種類は色ではなくアイコンで見分けるので、両方でそろっていないと迷う）。
+enum ClipKindIcon {
+    static let text = "textformat"
+    static let video = "film"
+    static let image = "photo"
+    static let audio = "waveform"
+
+    static func name(for clip: Clip, in track: Track, project: Project) -> String {
+        if clip.content.textInstance != nil { return text }
+        if track.kind == .audio { return audio }
+        if let id = clip.content.assetID, project.asset(id)?.kind == .image { return image }
+        return video
+    }
+
+    /// トラックの見出し。トラックの種類は映像と音声しかないので、映像のトラックは
+    /// 載っているクリップから決める。全部が同じ種類ならそのアイコン（テロップだけの
+    /// トラックは「あぁ」）、混ざっている・空のときは映像。
+    static func name(for track: Track, project: Project) -> String {
+        if track.kind == .audio { return audio }
+        let kinds = Set(track.clips.map { name(for: $0, in: track, project: project) })
+        return kinds.count == 1 ? kinds.first! : video
+    }
+}
+
+
+/// タイムラインの色。種類で色分けはせず、トラックの地をグレーにして、
+/// クリップはその上に白（ダークではほぼ黒）の塗り、文字はいちばん強い色で載せる。
+/// 枠は付けず、塗りと地の明暗差だけで分ける。系統色（textBackgroundColor など）は
+/// ダークで地とクリップがほぼ同じ暗さになるので、ここで明暗を決める。
+enum TimelinePalette {
+    private static func dynamic(light: CGFloat, dark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(white: isDark ? dark : light, alpha: 1)
+        })
+    }
+
+    /// トラックの地。枠が無くてもクリップとはっきり分かれる明るさにする。
+    static let lane = dynamic(light: 0.62, dark: 0.42)
+    /// クリップの塗り。
+    static let clipFill = dynamic(light: 1.0, dark: 0.06)
+    /// クリップのラベルとアイコン。
+    static let clipText = dynamic(light: 0.0, dark: 1.0)
+}
+
+
 private struct ClipView: View {
     @Bindable var store: EditorStore
     let clip: Clip
@@ -1299,44 +1451,70 @@ private struct ClipView: View {
     let isDragging: Bool
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(fill)
+        ZStack(alignment: .leading) {
+            // 種類によらず同じ見た目。背景（レーン）とはっきり分かれる塗りと枠に、
+            // 文字はいちばん強い色で載せる。ライトなら白地に黒、ダークなら黒地に白。
+            RoundedRectangle(cornerRadius: 4)
+                .fill(TimelinePalette.clipFill)
             if clip.fade.inDuration > 0 || clip.fade.outDuration > 0 {
                 fadeOverlay
             }
-            HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 9))
-                Text(label).font(.system(size: 10)).lineLimit(1)
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: TimelineView.clipIconSize, weight: .medium))
+                Text(label)
+                    .font(.system(size: TimelineView.clipFontSize, weight: .medium))
+                    .lineLimit(1)
             }
-            .foregroundStyle(.white.opacity(0.95))
-            .padding(.horizontal, 6)
-            .padding(.top, 5)
+            .foregroundStyle(TimelinePalette.clipText)
+            .padding(.horizontal, 7)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(isSelected ? Color.white : Color.black.opacity(0.35),
-                              lineWidth: isSelected ? 2 : 1)
-        )
+        .overlay {
+            // 枠は付けない（塗りと地の明暗差で分ける）。色はアクセントだけで、
+            // 選んだクリップを見分けるのに使う。
+            if isSelected {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.accentColor, lineWidth: 2.5)
+            }
+        }
         .opacity(isDragging ? 0.75 : 1)
-        .contentShape(RoundedRectangle(cornerRadius: 5))
+        .contentShape(RoundedRectangle(cornerRadius: 4))
         .onTapGesture {
             store.select(clipID: clip.id, extend: NSEvent.modifierFlags.contains(.command))
         }
         .contextMenu {
             Button("この位置で分割") {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.splitAtPlayhead()
             }
             Button("複製") {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.duplicateSelection()
             }
             Divider()
+            Button("コピー") {
+                ensureSelected()
+                store.copySelection()
+            }
+            Button("切り取り") {
+                ensureSelected()
+                store.cutSelection()
+            }
+            Divider()
+            Button("削除して詰める") {
+                ensureSelected()
+                store.rippleDeleteSelection()
+            }
             Button("削除", role: .destructive) {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.deleteSelection()
             }
+        }
+    }
+
+    private func ensureSelected() {
+        if !store.selectedClipIDs.contains(clip.id) {
+            store.selectedClipIDs = [clip.id]
         }
     }
 
@@ -1348,36 +1526,25 @@ private struct ClipView: View {
             let outW = CGFloat(clip.fade.outDuration / total) * w
             ZStack(alignment: .leading) {
                 if inW > 1 {
-                    LinearGradient(colors: [.black.opacity(0.55), .clear],
+                    LinearGradient(colors: [Color.primary.opacity(0.3), .clear],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: inW)
                 }
                 if outW > 1 {
-                    LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                    LinearGradient(colors: [.clear, Color.primary.opacity(0.3)],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: outW)
                         .offset(x: w - outW)
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
         .allowsHitTesting(false)
     }
 
     private var isText: Bool { clip.content.textInstance != nil }
 
-    private var fill: Color {
-        if isText { return Color(red: 0.45, green: 0.33, blue: 0.72) }
-        if track.kind == .audio { return Color(red: 0.16, green: 0.49, blue: 0.36) }
-        return Color(red: 0.18, green: 0.38, blue: 0.62)
-    }
-
-    private var icon: String {
-        if isText { return "textformat" }
-        if track.kind == .audio { return "waveform" }
-        if let id = clip.content.assetID, store.project.asset(id)?.kind == .image { return "photo" }
-        return "film"
-    }
+    private var icon: String { ClipKindIcon.name(for: clip, in: track, project: store.project) }
 
     private var label: String {
         if let inst = clip.content.textInstance {

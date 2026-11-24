@@ -7,6 +7,8 @@ import SwiftUI
 struct TextClipsPane: View {
     @Bindable var store: EditorStore
     @Binding var bottomTab: BottomTab
+    /// 再生操作。タイムラインの見出し行と同じものを並べる（ContentView が渡す）。
+    var transport: AnyView = AnyView(EmptyView())
 
     @State private var templateFilter: UUID?
     @State private var checked: Set<UUID> = []
@@ -55,16 +57,23 @@ struct TextClipsPane: View {
         HStack(spacing: 10) {
             BottomTabPicker(selection: $bottomTab)
 
-            Divider().frame(height: 16)
+            Divider().frame(height: 14)
 
-            Picker("", selection: $templateFilter) {
-                Text("すべて").tag(UUID?.none)
-                ForEach(store.project.textTemplates) { t in
-                    Text(LName(t.name)).tag(UUID?.some(t.id))
+            transport
+
+            Divider().frame(height: 14)
+
+            if store.project.textTemplates.count > 1,
+               !store.project.allTextClips.isEmpty || templateFilter != nil {
+                Picker("", selection: $templateFilter) {
+                    Text("すべて").tag(UUID?.none)
+                    ForEach(store.project.textTemplates) { t in
+                        Text(LName(t.name)).tag(UUID?.some(t.id))
+                    }
                 }
+                .labelsHidden()
+                .fixedSize()
             }
-            .labelsHidden()
-            .fixedSize()
 
             Menu {
                 ForEach(store.project.textTemplates) { template in
@@ -92,8 +101,11 @@ struct TextClipsPane: View {
             }
         }
         .buttonStyle(.borderless)
+        // 30pt の行に収まるよう、見出しのコントロールは小さいサイズにそろえる
+        // （通常サイズのセグメントは 24pt あり、上下に 3pt しか残らない）。
+        .controlSize(.small)
         .padding(.horizontal, 10)
-        .frame(height: 34)
+        .frame(height: TimelineView.toolbarHeight)
     }
 
     /// 音声からの自動生成。進行中は進み具合と中止に差し替わる。
@@ -245,62 +257,19 @@ struct TextClipsPane: View {
     }
 
     private func row(_ clip: Clip) -> some View {
-        HStack(spacing: 8) {
-            Toggle("", isOn: Binding(
+        TextClipRow(
+            store: store,
+            clip: clip,
+            isChecked: Binding(
                 get: { checked.contains(clip.id) },
                 set: { on in
                     if on { checked.insert(clip.id) } else { checked.remove(clip.id) }
                 }
-            ))
-            .labelsHidden()
-            .frame(width: 20)
-
-            Button(Format.timecode(clip.start, fps: store.project.canvas.fps)) {
-                store.seek(to: clip.start)
-                store.selectedClipIDs = [clip.id]
-            }
-            .buttonStyle(.link)
-            .font(.system(.caption, design: .monospaced))
-            .frame(width: 72, alignment: .leading)
-
-            if stringProps.isEmpty {
-                // テンプレートが混在しているときは、行ごとに自前の主要項目を編集する。
-                if let def = primaryProp(clip) {
-                    TextPropField(store: store, clip: clip, def: def)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Text(summary(clip))
-                        .font(.caption)
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            } else {
-                ForEach(stringProps) { def in
-                    TextPropField(store: store, clip: clip, def: def)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-
-            Text(Format.seconds(clip.duration))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 50, alignment: .trailing)
-
-            Button {
-                store.selectedClipIDs = [clip.id]
-                store.deleteSelection()
-            } label: {
-                Image(systemName: "trash").font(.caption)
-            }
-            .buttonStyle(.borderless)
-            .frame(width: 26)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
-        .background(store.selectedClipIDs.contains(clip.id)
-                    ? Color.accentColor.opacity(0.14) : Color.clear)
-        .contentShape(Rectangle())
-        .onTapGesture { store.selectedClipIDs = [clip.id] }
+            ),
+            stringProps: stringProps,
+            primaryProp: primaryProp(clip),
+            summary: summary(clip)
+        )
     }
 
     /// 行ごとの主要なテキスト項目。テンプレートが混ざっていても打ち替えられるようにする。
@@ -347,6 +316,93 @@ struct TextClipsPane: View {
                     p.tracks[ti].clips[ci].fade = Fade(inDuration: min(seconds, limit),
                                                        outDuration: min(seconds, limit))
                 }
+            }
+        }
+    }
+}
+
+/// 字幕一覧の 1 行。削除ボタンはホバー時だけ出して一覧のノイズを抑える。
+private struct TextClipRow: View {
+    @Bindable var store: EditorStore
+    let clip: Clip
+    @Binding var isChecked: Bool
+    let stringProps: [PropDef]
+    let primaryProp: PropDef?
+    let summary: String
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Toggle("", isOn: $isChecked)
+                .labelsHidden()
+                .frame(width: 20)
+
+            Button(Format.timecode(clip.start, fps: store.project.canvas.fps)) {
+                store.seek(to: clip.start)
+                store.selectedClipIDs = [clip.id]
+            }
+            .buttonStyle(.link)
+            .font(.system(.caption, design: .monospaced))
+            .frame(width: 72, alignment: .leading)
+
+            if stringProps.isEmpty {
+                // テンプレートが混在しているときは、行ごとに自前の主要項目を編集する。
+                if let def = primaryProp {
+                    TextPropField(store: store, clip: clip, def: def)
+                        .frame(maxWidth: .infinity)
+                } else {
+                    Text(summary)
+                        .font(.caption)
+                        .lineLimit(1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                ForEach(stringProps) { def in
+                    TextPropField(store: store, clip: clip, def: def)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            Text(Format.seconds(clip.duration))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .frame(width: 50, alignment: .trailing)
+
+            Button {
+                store.selectedClipIDs = [clip.id]
+                store.deleteSelection()
+            } label: {
+                Image(systemName: "trash")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.borderless)
+            .frame(width: 26)
+            .opacity(isHovered ? 1 : 0)
+            .allowsHitTesting(isHovered)
+            .help("削除")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 3)
+        .background(store.selectedClipIDs.contains(clip.id)
+                    ? Color.accentColor.opacity(0.14) : Color.clear)
+        .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .onTapGesture { store.selectedClipIDs = [clip.id] }
+        .contextMenu {
+            Button("再生ヘッドをここへ移動") {
+                store.seek(to: clip.start)
+                store.selectedClipIDs = [clip.id]
+            }
+            Button("複製") {
+                store.selectedClipIDs = [clip.id]
+                store.duplicateSelection()
+            }
+            Divider()
+            Button("削除", role: .destructive) {
+                store.selectedClipIDs = [clip.id]
+                store.deleteSelection()
             }
         }
     }

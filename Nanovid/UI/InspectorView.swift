@@ -3,6 +3,8 @@ import SwiftUI
 struct InspectorView: View {
     @Bindable var store: EditorStore
 
+    @State private var showFade = false
+
     private var selectedClips: [Clip] {
         store.project.tracks.flatMap { $0.clips }.filter { store.selectedClipIDs.contains($0.id) }
     }
@@ -11,27 +13,274 @@ struct InspectorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 if selectedClips.isEmpty {
-                    canvasSection
+                    ProjectSettingsView(store: store)
                 } else {
                     clipSection(selectedClips)
                 }
             }
             .padding(12)
         }
-        .frame(minWidth: 260)
+        .frame(minWidth: 240)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onAppear { syncFadeDisclosure(for: selectedClips) }
+        .onChange(of: store.selectedClipIDs) { _, _ in
+            syncFadeDisclosure(for: selectedClips)
+        }
     }
 
-    // MARK: - キャンバス設定
+    private func syncFadeDisclosure(for clips: [Clip]) {
+        showFade = clips.contains { $0.fade.inDuration > 0 || $0.fade.outDuration > 0 }
+    }
 
-    private var canvasSection: some View {
+    // MARK: - クリップ設定
+
+    @ViewBuilder
+    private func clipSection(_ clips: [Clip]) -> some View {
+        let hasVisualMedia = clips.contains(where: isVisualMedia)
+        let hasAudio = clips.contains(where: clipHasAudio)
+        let shared = sharedTemplate(clips)
+        let allText = clips.allSatisfy { $0.content.textInstance != nil }
+
+        VStack(alignment: .leading, spacing: 12) {
+            clipHeader(clips, sharedTemplate: shared)
+
+            // 1. テキストクリップでは文字・色・テンプレートが主役。いちばん上に出す。
+            if let shared {
+                Divider()
+                textPropsBlock(template: shared, clips: clips)
+            } else if allText {
+                Divider()
+                Text("種類の違うテンプレートが混在しています。同じテンプレートのクリップだけを選ぶと props を一括編集できます。")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // 2. 映像・画像の配置（音声のみのクリップには出さない）。
+            if hasVisualMedia {
+                Divider()
+                transformBlock(clips)
+            }
+
+            // 3. 音量（音声を持つクリップにだけ出す。テキストや静止画には出さない）。
+            if hasAudio {
+                Divider()
+                volumeBlock(clips)
+            }
+
+            // 4. フェードは既定が 0 のため折りたたんでおき、値が立っていれば開く。
+            Divider()
+            fadeBlock(clips)
+        }
+    }
+
+    private func clipHeader(_ clips: [Clip], sharedTemplate: TextTemplate?) -> some View {
+        let fps = store.project.canvas.fps
+        return VStack(alignment: .leading, spacing: 3) {
+            if clips.count == 1, let single = clips.first {
+                Text(singleTitle(for: single, template: sharedTemplate))
+                    .font(.headline)
+                    .lineLimit(1)
+                Text("\(Format.timecode(single.start, fps: fps)) · \(Format.timecode(single.duration, fps: fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else {
+                // 1 個のときは数を出さない。日本語には CLDR の単数形が無いので、
+                // 複数形はここで分ける（英語側は %lld 個のクリップ に one/other を持つ）。
+                Text("\(clips.count) 個のクリップ")
+                    .font(.headline)
+                let total = clips.map(\.duration).reduce(0, +)
+                Text("合計 \(Format.timecode(total, fps: fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func singleTitle(for clip: Clip, template: TextTemplate?) -> String {
+        if let template {
+            return LName(template.name)
+        }
+        if !clip.name.isEmpty {
+            return LName(clip.name)
+        }
+        if let id = clip.content.assetID, let asset = store.project.asset(id) {
+            return asset.displayName
+        }
+        return L("クリップ")
+    }
+
+    private func isVisualMedia(_ clip: Clip) -> Bool {
+        guard let assetID = clip.content.assetID else { return false }
+        if let asset = store.project.asset(assetID) {
+            return asset.kind != .audio
+        }
+        return store.project.track(containing: clip.id)?.kind == .video
+    }
+
+    private func clipHasAudio(_ clip: Clip) -> Bool {
+        guard let assetID = clip.content.assetID else { return false }
+        if let asset = store.project.asset(assetID) {
+            return asset.kind == .audio || asset.hasAudio
+        }
+        return store.project.track(containing: clip.id)?.kind == .audio
+    }
+
+    private func fadeBlock(_ clips: [Clip]) -> some View {
+        let hasActiveFade = clips.contains { $0.fade.inDuration > 0 || $0.fade.outDuration > 0 }
+        return DisclosureGroup(isExpanded: $showFade) {
+            VStack(alignment: .leading, spacing: 8) {
+                NumberRow(label: "イン", value: mixed(clips) { $0.fade.inDuration },
+                          range: 0...5, unit: L("秒")) { v in
+                    store.updateSelectedClips { $0.fade.inDuration = min(v, $0.duration / 2) }
+                }
+                NumberRow(label: "アウト", value: mixed(clips) { $0.fade.outDuration },
+                          range: 0...5, unit: L("秒")) { v in
+                    store.updateSelectedClips { $0.fade.outDuration = min(v, $0.duration / 2) }
+                }
+            }
+            .padding(.top, 6)
+        } label: {
+            HStack {
+                Text("フェード")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                if !showFade, hasActiveFade {
+                    Text(fadeSummary(clips))
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func fadeSummary(_ clips: [Clip]) -> String {
+        let inVal = mixed(clips) { $0.fade.inDuration }
+        let outVal = mixed(clips) { $0.fade.outDuration }
+        let a = inVal.map { Format.seconds($0) } ?? "—"
+        let b = outVal.map { Format.seconds($0) } ?? "—"
+        return "\(a) / \(b)"
+    }
+
+    private func transformBlock(_ clips: [Clip]) -> some View {
+        let modified = clips.contains {
+            abs($0.transform.scale - 1) > 1e-6
+                || abs($0.transform.position.x) > 1e-6
+                || abs($0.transform.position.y) > 1e-6
+                || abs($0.opacity - 1) > 1e-6
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("配置").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if modified {
+                    Button {
+                        store.updateSelectedClips {
+                            $0.transform = .identity
+                            $0.opacity = 1
+                        }
+                    } label: {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("配置をリセット")
+                }
+            }
+            NumberRow(label: "拡大", value: mixed(clips) { $0.transform.scale },
+                      range: 0.05...8, unit: "×") { v in
+                store.updateSelectedClips { $0.transform.scale = v }
+            }
+            NumberRow(label: "位置 X", value: mixed(clips) { $0.transform.position.x },
+                      range: -2...2, unit: "") { v in
+                store.updateSelectedClips { $0.transform.position.x = v }
+            }
+            NumberRow(label: "位置 Y", value: mixed(clips) { $0.transform.position.y },
+                      range: -2...2, unit: "") { v in
+                store.updateSelectedClips { $0.transform.position.y = v }
+            }
+            NumberRow(label: "不透明度", value: mixed(clips) { $0.opacity },
+                      range: 0...1, unit: "") { v in
+                store.updateSelectedClips { $0.opacity = v }
+            }
+        }
+    }
+
+    private func volumeBlock(_ clips: [Clip]) -> some View {
+        NumberRow(label: "音量", value: mixed(clips) { $0.volume },
+                  range: 0...2, unit: "×") { v in
+            store.updateSelectedClips { $0.volume = v }
+        }
+    }
+
+    // MARK: - テキスト props
+
+    private func sharedTemplate(_ clips: [Clip]) -> TextTemplate? {
+        let ids = Set(clips.compactMap { $0.content.textInstance?.templateID })
+        guard ids.count == 1, let id = ids.first else { return nil }
+        return store.project.template(id)
+    }
+
+    private func textPropsBlock(template: TextTemplate, clips: [Clip]) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if clips.count > 1 {
+                HStack {
+                    Text("テキスト（\(LName(template.name))）")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(clips.count) 件に適用")
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                }
+            }
+
+            ForEach(template.props) { def in
+                PropEditor(
+                    def: def,
+                    values: clips.compactMap { $0.content.textInstance?.value(def.key, in: template) },
+                    isOverridden: clips.contains { $0.content.textInstance?.props[def.key] != nil },
+                    onChange: { store.setTextProp(def.key, to: $0) },
+                    onReset: { store.resetTextProp(def.key) }
+                )
+            }
+
+            if store.project.textTemplates.count > 1 {
+                LabeledContent("テンプレート") {
+                    Menu(LName(template.name)) {
+                        ForEach(store.project.textTemplates) { t in
+                            Button(LName(t.name)) {
+                                store.retemplate(clipIDs: store.selectedClipIDs, to: t.id)
+                            }
+                        }
+                    }
+                    .lineLimit(1)
+                }
+                .font(.caption)
+            }
+        }
+    }
+
+    /// 選択した全クリップで値が一致すればその値、違えば nil。
+    private func mixed(_ clips: [Clip], _ keyPath: (Clip) -> Double) -> Double? {
+        let values = clips.map(keyPath)
+        guard let first = values.first else { return nil }
+        return values.allSatisfy { abs($0 - first) < 1e-9 } ? first : nil
+    }
+}
+
+// MARK: - プロジェクト設定（インスペクタ未選択時とシートで共有）
+
+struct ProjectSettingsView: View {
+    @Bindable var store: EditorStore
+    @State private var showOutputRange = false
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionHeader("プロジェクト")
 
-            // ラベルは折り返さない。プリセット名（YouTube HD (1920×1080)）が
-            // 長く、英語の Resolution だとラベル側が潰されて「Resolu-tion」と
-            // 割れていた。パネルが狭いときは代わりにメニューの方を縮める。
-            // 実際の数値はこのすぐ下に別に出るので、切れても分からなくならない。
+            // ラベルは折り返さない。プリセット名が長いので、狭いときはメニュー側を縮める。
             LabeledContent {
                 Menu(currentPresetName) {
                     ForEach(CanvasPresetOption.all) { option in
@@ -72,50 +321,73 @@ struct InspectorView: View {
                 .labelsHidden()
             }
 
-            Text("\(store.project.canvas.width) × \(store.project.canvas.height) / \(store.project.canvas.fps)fps")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if !isNamedPreset {
+                Text("\(store.project.canvas.width) × \(store.project.canvas.height) / \(store.project.canvas.fps)fps")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
 
             Divider()
             outputRangeBlock
-
-            Divider()
-            Text("クリップを選択すると、ここで詳細を編集できます。")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+        }
+        .onAppear { showOutputRange = store.project.hasExplicitOutputRange }
+        .onChange(of: store.project.hasExplicitOutputRange) { _, explicit in
+            if explicit { showOutputRange = true }
         }
     }
 
-    /// 書き出す範囲。タイムラインのマーカーと同じ値を数字で触れるようにする。
+    /// 書き出す範囲。普段は自動で追従するので折りたたんでおく。
     private var outputRangeBlock: some View {
         let fps = store.project.canvas.fps
-        return VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
-                Text("動画の範囲").font(.caption).foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-                if store.project.hasExplicitOutputRange {
-                    Button("自動に戻す") { store.resetOutputRange() }
-                        .buttonStyle(.link)
+        return DisclosureGroup(isExpanded: $showOutputRange) {
+            VStack(alignment: .leading, spacing: 6) {
+                TimecodeRow(label: "開始", seconds: store.outputStart, fps: fps) {
+                    store.setOutputStart($0)
+                }
+                TimecodeRow(label: "長さ", seconds: store.duration, fps: fps) {
+                    store.setOutputDuration($0)
+                }
+                TimecodeRow(label: "終了", seconds: store.outputEnd, fps: fps) {
+                    store.setOutputEnd($0)
+                }
+
+                HStack {
+                    Text(store.project.hasExplicitOutputRange
+                         ? "この範囲だけを書き出します。"
+                         : "クリップの終わりに合わせています。")
                         .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                    if store.project.hasExplicitOutputRange {
+                        Button("自動に戻す") { store.resetOutputRange() }
+                            .buttonStyle(.link)
+                            .font(.caption2)
+                    }
                 }
             }
-
-            TimecodeRow(label: "開始", seconds: store.outputStart, fps: fps) {
-                store.setOutputStart($0)
+            .padding(.top, 6)
+        } label: {
+            HStack {
+                Text("動画の範囲").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !showOutputRange {
+                    if store.project.hasExplicitOutputRange {
+                        Text("\(Format.timecode(store.outputStart, fps: fps)) – \(Format.timecode(store.outputEnd, fps: fps))")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text("自動")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
             }
-            TimecodeRow(label: "長さ", seconds: store.duration, fps: fps) {
-                store.setOutputDuration($0)
-            }
-            TimecodeRow(label: "終了", seconds: store.outputEnd, fps: fps) {
-                store.setOutputEnd($0)
-            }
-
-            Text(store.project.hasExplicitOutputRange
-                 ? "この範囲だけを書き出します。"
-                 : "クリップの終わりに合わせています。")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
+    }
+
+    private var isNamedPreset: Bool {
+        let size = store.project.canvas.size
+        return CanvasPresetOption.all.contains { $0.size == size }
     }
 
     private var currentPresetName: String {
@@ -123,155 +395,26 @@ struct InspectorView: View {
         return CanvasPresetOption.all.first { $0.size == size }?.name
             ?? "\(store.project.canvas.width)×\(store.project.canvas.height)"
     }
+}
 
-    // MARK: - クリップ設定
+/// メニュー（ファイル > プロジェクト設定…）から開くシート。
+struct ProjectSettingsSheet: View {
+    @Bindable var store: EditorStore
+    @Environment(\.dismiss) private var dismiss
 
-    @ViewBuilder
-    private func clipSection(_ clips: [Clip]) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // 1 個のときは数を出さない。日本語には CLDR の単数形が無いので、
-            // これはカタログの複数形では書けず、ここで分ける（英語側は
-            // %lld 個のクリップ に one/other を持たせてある）。
-            SectionHeader(clips.count == 1 ? "クリップ" : "\(clips.count) 個のクリップ")
-
-            timingBlock(clips)
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            ProjectSettingsView(store: store)
             Divider()
-            fadeBlock(clips)
-
-            if clips.contains(where: { $0.content.textInstance == nil }) {
-                Divider()
-                transformBlock(clips)
-            }
-
-            Divider()
-            volumeBlock(clips)
-
-            if let shared = sharedTemplate(clips) {
-                Divider()
-                textPropsBlock(template: shared, clips: clips)
-            } else if clips.allSatisfy({ $0.content.textInstance != nil }) {
-                Divider()
-                Text("種類の違うテンプレートが混在しています。同じテンプレートのクリップだけを選ぶと props を一括編集できます。")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
-    private func timingBlock(_ clips: [Clip]) -> some View {
-        let fps = store.project.canvas.fps
-        return VStack(alignment: .leading, spacing: 6) {
-            if let single = clips.count == 1 ? clips.first : nil {
-                LabeledContent("開始") {
-                    Text(Format.timecode(single.start, fps: fps))
-                        .font(.system(.caption, design: .monospaced))
-                }
-                LabeledContent("長さ") {
-                    Text(Format.timecode(single.duration, fps: fps))
-                        .font(.system(.caption, design: .monospaced))
-                }
-            } else {
-                let total = clips.map(\.duration).reduce(0, +)
-                LabeledContent("合計の長さ") {
-                    Text(Format.timecode(total, fps: fps))
-                        .font(.system(.caption, design: .monospaced))
-                }
-            }
-        }
-    }
-
-    private func fadeBlock(_ clips: [Clip]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("フェード").font(.caption).foregroundStyle(.secondary)
-            NumberRow(label: "イン", value: mixed(clips) { $0.fade.inDuration },
-                      range: 0...5, unit: L("秒")) { v in
-                store.updateSelectedClips { $0.fade.inDuration = min(v, $0.duration / 2) }
-            }
-            NumberRow(label: "アウト", value: mixed(clips) { $0.fade.outDuration },
-                      range: 0...5, unit: L("秒")) { v in
-                store.updateSelectedClips { $0.fade.outDuration = min(v, $0.duration / 2) }
-            }
-        }
-    }
-
-    private func transformBlock(_ clips: [Clip]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("配置").font(.caption).foregroundStyle(.secondary)
-            NumberRow(label: "拡大", value: mixed(clips) { $0.transform.scale },
-                      range: 0.05...8, unit: "×") { v in
-                store.updateSelectedClips { $0.transform.scale = v }
-            }
-            NumberRow(label: "位置 X", value: mixed(clips) { $0.transform.position.x },
-                      range: -2...2, unit: "") { v in
-                store.updateSelectedClips { $0.transform.position.x = v }
-            }
-            NumberRow(label: "位置 Y", value: mixed(clips) { $0.transform.position.y },
-                      range: -2...2, unit: "") { v in
-                store.updateSelectedClips { $0.transform.position.y = v }
-            }
-            NumberRow(label: "不透明度", value: mixed(clips) { $0.opacity },
-                      range: 0...1, unit: "") { v in
-                store.updateSelectedClips { $0.opacity = v }
-            }
-        }
-    }
-
-    private func volumeBlock(_ clips: [Clip]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("音量").font(.caption).foregroundStyle(.secondary)
-            NumberRow(label: "ボリューム", value: mixed(clips) { $0.volume },
-                      range: 0...2, unit: "×") { v in
-                store.updateSelectedClips { $0.volume = v }
-            }
-        }
-    }
-
-    // MARK: - テキスト props
-
-    private func sharedTemplate(_ clips: [Clip]) -> TextTemplate? {
-        let ids = Set(clips.compactMap { $0.content.textInstance?.templateID })
-        guard ids.count == 1, let id = ids.first else { return nil }
-        return store.project.template(id)
-    }
-
-    private func textPropsBlock(template: TextTemplate, clips: [Clip]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("テキスト（\(LName(template.name))）").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                if clips.count > 1 {
-                    Text("\(clips.count) 件に適用")
-                        .font(.caption2)
-                        .foregroundStyle(.orange)
-                }
-            }
-
-            ForEach(template.props) { def in
-                PropEditor(
-                    def: def,
-                    values: clips.compactMap { $0.content.textInstance?.value(def.key, in: template) },
-                    isOverridden: clips.contains { $0.content.textInstance?.props[def.key] != nil },
-                    onChange: { store.setTextProp(def.key, to: $0) },
-                    onReset: { store.resetTextProp(def.key) }
-                )
-            }
-
-            if store.project.textTemplates.count > 1 {
-                Menu("テンプレートを変更") {
-                    ForEach(store.project.textTemplates) { t in
-                        Button(LName(t.name)) { store.retemplate(clipIDs: store.selectedClipIDs, to: t.id) }
-                    }
-                }
-                .fixedSize()
+                Button("閉じる") { dismiss() }
+                    .keyboardShortcut(.cancelAction)
             }
         }
-    }
-
-    /// 選択した全クリップで値が一致すればその値、違えば nil。
-    private func mixed(_ clips: [Clip], _ keyPath: (Clip) -> Double) -> Double? {
-        let values = clips.map(keyPath)
-        guard let first = values.first else { return nil }
-        return values.allSatisfy { abs($0 - first) < 1e-9 } ? first : nil
+        .padding(20)
+        .frame(width: 360)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 
@@ -300,15 +443,16 @@ struct NumberRow: View {
         HStack(spacing: 6) {
             Text(label)
                 .font(.caption)
-                .frame(width: 66, alignment: .leading)
+                .frame(width: 56, alignment: .leading)
             Slider(value: Binding(
                 get: { value ?? range.lowerBound },
                 set: { onChange($0) }
             ), in: range)
+            .controlSize(.small)
             TextField("—", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.caption, design: .monospaced))
-                .frame(width: 58)
+                .frame(width: 52)
                 .focused($focused)
                 .onSubmit { commit() }
             if !unit.isEmpty {
@@ -344,25 +488,44 @@ struct PropEditor: View {
 
     private var isMixed: Bool { uniform == nil && values.count > 1 }
 
+    private var isInline: Bool {
+        def.type == .color || def.type == .bool
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
+        if isInline {
+            HStack(spacing: 6) {
                 Text(LName(def.label)).font(.caption)
-                if isOverridden {
-                    Button(action: onReset) {
-                        Image(systemName: "arrow.uturn.backward.circle")
-                            .font(.system(size: 9))
-                    }
-                    .buttonStyle(.borderless)
-                    .help("テンプレートの既定値に戻す")
-                }
-                Spacer()
+                if isOverridden { resetButton }
                 if isMixed {
                     Text("複数の値").font(.caption2).foregroundStyle(.orange)
                 }
+                Spacer()
+                // 色の選択欄は枠を外側に描く。右端で切れないよう少し空ける。
+                editor.padding(.trailing, 3)
             }
-            editor
+        } else {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 4) {
+                    Text(LName(def.label)).font(.caption)
+                    if isOverridden { resetButton }
+                    Spacer()
+                    if isMixed {
+                        Text("複数の値").font(.caption2).foregroundStyle(.orange)
+                    }
+                }
+                editor
+            }
         }
+    }
+
+    private var resetButton: some View {
+        Button(action: onReset) {
+            Image(systemName: "arrow.uturn.backward.circle")
+                .font(.system(size: 9))
+        }
+        .buttonStyle(.borderless)
+        .help("テンプレートの既定値に戻す")
     }
 
     @ViewBuilder
@@ -446,7 +609,7 @@ struct TimecodeRow: View {
         HStack(spacing: 6) {
             Text(label)
                 .font(.caption)
-                .frame(width: 66, alignment: .leading)
+                .frame(width: 56, alignment: .leading)
             TextField("", text: $text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(.caption, design: .monospaced))
