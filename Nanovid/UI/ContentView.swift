@@ -62,7 +62,66 @@ struct ContentView: View {
             return true
         }
         .focusedSceneValue(\.editorStore, store)
+        #if DEBUG
+        .task { await applyShotState() }
+        #endif
     }
+
+    #if DEBUG
+    /// スクリーンショット用（デバッグビルドだけ）。本物のクリックを送らずに、
+    /// 起動引数で画面の状態を作る。
+    ///
+    ///   --shot-media <ファイル>...   取り込んでタイムラインに並べる（-- で始まる引数まで）
+    ///   --shot-state <状態>          select-text / select-media / export / library / text-tab
+    ///   --shot-size <幅>x<高さ>      窓の大きさ
+    @MainActor
+    private func applyShotState() async {
+        let args = CommandLine.arguments
+        try? await Task.sleep(for: .milliseconds(300))
+        if let i = args.firstIndex(of: "--shot-size"), args.count > i + 1 {
+            let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2, let window = NSApp.windows.first(where: { $0.isVisible }) {
+                window.setFrame(NSRect(x: 80, y: 80, width: parts[0], height: parts[1]), display: true)
+            }
+        }
+        if let i = args.firstIndex(of: "--shot-media") {
+            let urls = args[(i + 1)...].prefix { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
+            // --open の読み込みが済んでから足す。
+            try? await Task.sleep(for: .milliseconds(300))
+            let assets = await store.importAssets(urls: urls)
+            // 映像と画像は、テロップの無い映像トラックへ順に並べる。
+            var cursor: [UUID: Double] = [:]
+            for asset in assets {
+                let kind: TrackKind = asset.kind == .audio ? .audio : .video
+                guard let track = store.project.tracks.first(where: { t in
+                    t.kind == kind && !t.clips.contains { if case .text = $0.content { true } else { false } }
+                }) else { continue }
+                let at = cursor[track.id] ?? track.duration
+                store.addMediaClip(assetID: asset.id, trackID: track.id, at: at)
+                cursor[track.id] = at + (asset.kind == .image ? 5 : asset.duration)
+            }
+        }
+        guard let i = args.firstIndex(of: "--shot-state"), args.count > i + 1 else { return }
+        try? await Task.sleep(for: .milliseconds(500))
+        let clips = store.project.tracks.flatMap(\.clips)
+        switch args[i + 1] {
+        case "select-text":
+            if let clip = clips.first(where: { if case .text = $0.content { true } else { false } }) {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+            }
+        case "select-media":
+            if let clip = clips.first(where: { if case .media = $0.content { true } else { false } }) {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+            }
+        case "export": showExport = true
+        case "library": showLibrary = true
+        case "text-tab": bottomTab = .text
+        default: break
+        }
+    }
+    #endif
 
     /// 窓が縮んでも上段が潰れないように収める。
     private func resolvedBottomHeight(in total: CGFloat) -> CGFloat {
