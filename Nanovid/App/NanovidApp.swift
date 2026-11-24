@@ -35,6 +35,7 @@ struct NanovidApp: App {
     }
 
     @State private var store = EditorStore()
+    @State private var recents = RecentProjects.shared
     @State private var session = WindowSession()
     @Environment(\.openWindow) private var openWindow
     static let mainWindowID = "main"
@@ -56,6 +57,16 @@ struct NanovidApp: App {
         WindowGroup(id: Self.mainWindowID) {
             ContentView(store: store, session: session)
                 .frame(minWidth: 1100, minHeight: 700)
+                #if DEBUG
+                // スクリーンショット用。メニューの中身を窓の中に並べる（RecentShotView）。
+                .overlay {
+                    if let urls = RecentShotView.requestedURLs {
+                        RecentShotView(recorded: urls)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(.background)
+                    }
+                }
+                #endif
                 .onAppear(perform: openProjectFromArguments)
                 .modifier(AppDelegateLink(delegate: appDelegate, store: store))
                 // AI から操作するための MCP は、App Store 用ビルドには入れない。
@@ -79,6 +90,18 @@ struct NanovidApp: App {
                     .keyboardShortcut("n")
                 Button("開く…") { store.openProject() }
                     .keyboardShortcut("o")
+                // NSDocument を使わないので標準のメニューは出てこない。記録は
+                // NSDocumentController の標準のもの（端末ローカル）をそのまま使う。
+                Menu("最近使った項目を開く") {
+                    let urls = recents.urls
+                    let titles = RecentProjects.titles(for: urls)
+                    ForEach(Array(zip(urls, titles)), id: \.0) { url, title in
+                        Button(title) { store.openRecent(url) }
+                    }
+                    if !urls.isEmpty { Divider() }
+                    Button("メニューを消去") { recents.clear() }
+                        .disabled(urls.isEmpty)
+                }
                 Divider()
                 // 開いたときの案内を「あとで」にした場合の入口。
                 Button("素材の場所を指定…") { store.locateMissingMedia() }
