@@ -5,11 +5,24 @@ import UniformTypeIdentifiers
 struct TimelineView: View {
     @Bindable var store: EditorStore
     @Binding var bottomTab: BottomTab
+    /// 再生操作。プレビューの下に別の行を持たず、この見出し行に並べる（ContentView が渡す）。
+    var transport: AnyView = AnyView(EmptyView())
 
     static let headerWidth: CGFloat = 148
-    static let laneHeight: CGFloat = 56
-    static let laneGap: CGFloat = 4
-    static let rulerHeight: CGFloat = 24
+    /// 見出し行の高さ。字幕タブ（TextClipsPane）とそろえる。
+    static let toolbarHeight: CGFloat = 30
+    static let laneHeight: CGFloat = 40
+    static let laneGap: CGFloat = 2
+    static let rulerHeight: CGFloat = 18
+    /// 横スクロールバーの行の高さ。
+    static let scrollBarHeight: CGFloat = 13
+
+    /// 見出し行・ルーラー・n 本のトラック・横スクロールバーがちょうど収まる高さ。
+    static func fittingHeight(lanes: Int) -> CGFloat {
+        toolbarHeight + 1 + rulerHeight
+            + CGFloat(lanes) * (laneHeight + laneGap) - laneGap
+            + scrollBarHeight
+    }
     static let minZoom: Double = 8
     static let maxZoom: Double = 600
     /// レーン表示領域の座標空間。ドラッグ中に動かない基準として使う。
@@ -112,6 +125,10 @@ struct TimelineView: View {
 
             Divider().frame(height: 14)
 
+            transport
+
+            Divider().frame(height: 14)
+
             Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
                 .help("再生ヘッドの位置でクリップを分割 (S)")
 
@@ -190,7 +207,7 @@ struct TimelineView: View {
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)
         .padding(.horizontal, 10)
-        .frame(height: 32)
+        .frame(height: Self.toolbarHeight)
     }
 
     /// 切り抜きの範囲を打っているあいだの表示と操作。
@@ -488,9 +505,9 @@ struct TimelineView: View {
     private func trimHandle(clip: Clip, edge: HorizontalEdge,
                             width: CGFloat, visible: Bool) -> some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white.opacity(visible ? 0.55 : 0.001))
+            .fill(Color.primary.opacity(visible ? 0.45 : 0.001))
             .frame(width: width)
-            .padding(.vertical, 6)
+            .padding(.vertical, 5)
             .padding(edge == .leading ? .leading : .trailing, 2)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -979,7 +996,7 @@ struct TimelineView: View {
             .padding(.vertical, 3)
             .opacity(maxScrollX > 0 ? 1 : 0)
         }
-        .frame(height: 13)
+        .frame(height: Self.scrollBarHeight)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -1151,7 +1168,7 @@ private struct RulerView: View {
             // 範囲外は目盛りも薄くする。背景の濃淡だけに頼らずに済む。
             let fade = store.project.isInsideOutput(t) ? 1.0 : 0.45
             var line = Path()
-            line.move(to: CGPoint(x: x, y: isMajor ? 4 : 13))
+            line.move(to: CGPoint(x: x, y: isMajor ? 3 : size.height - 5))
             line.addLine(to: CGPoint(x: x, y: size.height))
             context.stroke(line,
                            with: .color(.secondary.opacity((isMajor ? 0.55 : 0.22) * fade)),
@@ -1374,15 +1391,17 @@ private struct ClipView: View {
             }
             HStack(spacing: 4) {
                 Image(systemName: icon).font(.system(size: 9))
+                    .foregroundStyle(.secondary)
                 Text(label).font(.system(size: 10)).lineLimit(1)
+                    .foregroundStyle(.primary)
             }
-            .foregroundStyle(.white.opacity(0.95))
             .padding(.horizontal, 6)
-            .padding(.top, 5)
+            .padding(.top, 4)
         }
         .overlay(
+            // 色はアクセントだけ。選んだクリップを見分けるのに使う。
             RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(isSelected ? Color.white : Color.black.opacity(0.35),
+                .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.16),
                               lineWidth: isSelected ? 2 : 1)
         )
         .opacity(isDragging ? 0.75 : 1)
@@ -1434,12 +1453,12 @@ private struct ClipView: View {
             let outW = CGFloat(clip.fade.outDuration / total) * w
             ZStack(alignment: .leading) {
                 if inW > 1 {
-                    LinearGradient(colors: [.black.opacity(0.55), .clear],
+                    LinearGradient(colors: [.black.opacity(0.35), .clear],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: inW)
                 }
                 if outW > 1 {
-                    LinearGradient(colors: [.clear, .black.opacity(0.55)],
+                    LinearGradient(colors: [.clear, .black.opacity(0.35)],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: outW)
                         .offset(x: w - outW)
@@ -1452,10 +1471,12 @@ private struct ClipView: View {
 
     private var isText: Bool { clip.content.textInstance != nil }
 
+    /// 種類ごとの色分けはしない。グレーの濃さとアイコンで見分ける
+    /// （テロップがいちばん濃く、音声がいちばん薄い）。primary の濃さなので
+    /// ライトでもダークでも同じ並びになる。
     private var fill: Color {
-        if isText { return Color(red: 0.45, green: 0.33, blue: 0.72) }
-        if track.kind == .audio { return Color(red: 0.16, green: 0.49, blue: 0.36) }
-        return Color(red: 0.18, green: 0.38, blue: 0.62)
+        let base: Double = isText ? 0.26 : (track.kind == .audio ? 0.10 : 0.17)
+        return Color.primary.opacity(isSelected ? base + 0.06 : base)
     }
 
     private var icon: String {

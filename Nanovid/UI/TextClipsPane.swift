@@ -7,6 +7,8 @@ import SwiftUI
 struct TextClipsPane: View {
     @Bindable var store: EditorStore
     @Binding var bottomTab: BottomTab
+    /// 再生操作。タイムラインの見出し行と同じものを並べる（ContentView が渡す）。
+    var transport: AnyView = AnyView(EmptyView())
 
     @State private var templateFilter: UUID?
     @State private var checked: Set<UUID> = []
@@ -57,6 +59,10 @@ struct TextClipsPane: View {
 
             Divider().frame(height: 14)
 
+            transport
+
+            Divider().frame(height: 14)
+
             if store.project.textTemplates.count > 1,
                !store.project.allTextClips.isEmpty || templateFilter != nil {
                 Picker("", selection: $templateFilter) {
@@ -96,7 +102,7 @@ struct TextClipsPane: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 10)
-        .frame(height: 32)
+        .frame(height: TimelineView.toolbarHeight)
     }
 
     /// 音声からの自動生成。進行中は進み具合と中止に差し替わる。

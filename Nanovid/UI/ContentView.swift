@@ -18,25 +18,22 @@ struct ContentView: View {
     @State private var editingTemplateID: UUID?
     /// 録音を始めたときの再生ヘッド位置。止めたらそこへ置く。
     @State private var recordingAnchor: Double = 0
-    @State private var isTransportHovered = false
 
-    // レイアウト。素材パネルは既定で閉じ、インスペクタはクリップ選択中だけ自動表示する。
+    // レイアウト。素材パネルもインスペクタも既定で閉じ、⌘1 / ⌘2 とツールバーで開閉する。
+    // 選択に合わせて勝手に開閉すると、選ぶたびにプレビューの幅が変わって落ち着かない。
     @State private var showLibrary = false
-    /// nil は自動（選択中だけ表示）、true/false はユーザーの手動開閉。
-    @State private var inspectorOverride: Bool?
+    @State private var showInspector = false
     @State private var libraryWidth: CGFloat = 230
     @State private var inspectorWidth: CGFloat = 276
     /// 下段の高さ。窓を広げたぶんは上段（プレビュー）に回したいので、
     /// 上段ではなく下段の高さを持つ。
-    @State private var bottomHeight: CGFloat = 240
+    /// 既定は、見出し行・ルーラー・3 トラック・横スクロールバーがちょうど収まる高さ
+    /// （TimelineView の寸法から求める）。
+    @State private var bottomHeight: CGFloat = TimelineView.fittingHeight(lanes: 3)
     @State private var bottomTab: BottomTab = .timeline
 
     private let topMinHeight: CGFloat = 220
     private let bottomMinHeight: CGFloat = 130
-
-    private var isInspectorShown: Bool {
-        inspectorOverride ?? !store.selectedClipIDs.isEmpty
-    }
 
     var body: some View {
         GeometryReader { geo in
@@ -77,12 +74,6 @@ struct ContentView: View {
             loadDroppedURLs(providers)
             return true
         }
-        .onChange(of: store.selectedClipIDs.isEmpty) { _, isEmpty in
-            // 選択中に手動で閉じていた場合、選択を解いたら自動モードに戻す。
-            if isEmpty, inspectorOverride == false {
-                inspectorOverride = nil
-            }
-        }
         .onChange(of: session.toggleRecordingCount) { _, _ in
             toggleRecording()
         }
@@ -102,9 +93,13 @@ struct ContentView: View {
     ///   --shot-media <ファイル>...   取り込んでタイムラインに並べる（-- で始まる引数まで）
     ///   --shot-state <状態>          select-text / select-media / select-audio / export / library / text-tab
     ///   --shot-size <幅>x<高さ>      窓の大きさ
+    ///   --shot-appearance light|dark 外観（システムの設定を変えずに、このアプリだけ）
     @MainActor
     private func applyShotState() async {
         let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--shot-appearance"), args.count > i + 1 {
+            NSApp.appearance = NSAppearance(named: args[i + 1] == "dark" ? .darkAqua : .aqua)
+        }
         try? await Task.sleep(for: .milliseconds(300))
         if let i = args.firstIndex(of: "--shot-size"), args.count > i + 1 {
             let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
@@ -133,21 +128,26 @@ struct ContentView: View {
         try? await Task.sleep(for: .milliseconds(500))
         let clips = store.project.tracks.flatMap(\.clips)
         switch args[i + 1] {
+        case "inspector":
+            showInspector = true
         case "select-text":
             if let clip = clips.first(where: { if case .text = $0.content { true } else { false } }) {
                 store.selectedClipIDs = [clip.id]
                 store.seek(to: clip.start + 0.5)
+                showInspector = true
             }
         case "select-media":
             if let clip = clips.first(where: { if case .media = $0.content { true } else { false } }) {
                 store.selectedClipIDs = [clip.id]
                 store.seek(to: clip.start + 0.5)
+                showInspector = true
             }
         case "select-audio":
             if let track = store.project.tracks.first(where: { $0.kind == .audio }),
                let clip = track.clips.first {
                 store.selectedClipIDs = [clip.id]
                 store.seek(to: clip.start + 0.5)
+                showInspector = true
             }
         case "export": session.showExport = true
         case "library": showLibrary = true
@@ -164,13 +164,7 @@ struct ContentView: View {
     }
 
     private func toggleInspector() {
-        withAnimation(.easeInOut(duration: 0.16)) {
-            if isInspectorShown {
-                inspectorOverride = store.selectedClipIDs.isEmpty ? nil : false
-            } else {
-                inspectorOverride = store.selectedClipIDs.isEmpty ? true : nil
-            }
-        }
+        withAnimation(.easeInOut(duration: 0.16)) { showInspector.toggle() }
     }
 
     // MARK: - 上段
@@ -183,15 +177,12 @@ struct ContentView: View {
                 PaneDivider.Vertical(width: $libraryWidth, range: 180...400)
             }
 
-            VStack(spacing: 0) {
-                PreviewPane(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                transport
-            }
-            .frame(maxWidth: .infinity)
+            // 再生操作はプレビューの下に別の行を持たず、下段の見出し行に並べる
+            // （TransportControls）。そのぶんの縦をプレビューに回す。
+            PreviewPane(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            if isInspectorShown {
+            if showInspector {
                 PaneDivider.Vertical(width: $inspectorWidth, range: 240...420, trailing: true)
                 InspectorView(store: store)
                     .frame(width: inspectorWidth)
@@ -205,112 +196,16 @@ struct ContentView: View {
     private var bottomPane: some View {
         switch bottomTab {
         case .timeline:
-            TimelineView(store: store, bottomTab: $bottomTab)
+            TimelineView(store: store, bottomTab: $bottomTab, transport: AnyView(transport))
         case .text:
-            TextClipsPane(store: store, bottomTab: $bottomTab)
+            TextClipsPane(store: store, bottomTab: $bottomTab, transport: AnyView(transport))
         }
     }
 
     // MARK: - 再生操作
 
     private var transport: some View {
-        ZStack {
-            HStack(spacing: 6) {
-                Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                    .font(.system(.callout, design: .monospaced))
-                    .monospacedDigit()
-                Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
-                    .font(.system(.caption, design: .monospaced))
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-
-                if store.isBuilding {
-                    ProgressView()
-                        .controlSize(.small)
-                        .padding(.leading, 4)
-                }
-
-                Spacer()
-
-                recordingControl
-            }
-
-            HStack(spacing: 12) {
-                Group {
-                    Button { store.seek(to: 0) } label: {
-                        Image(systemName: "backward.end.fill")
-                    }
-                    .help("先頭へ")
-                    Button { store.step(frames: -1) } label: {
-                        Image(systemName: "backward.frame.fill")
-                    }
-                    .help("1 フレーム戻る (←)")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .opacity(isTransportHovered ? 1 : 0)
-                .allowsHitTesting(isTransportHovered)
-
-                Button { store.togglePlay() } label: {
-                    Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 15))
-                        .frame(width: 24, height: 24)
-                        .contentShape(Rectangle())
-                }
-                .help("再生 / 一時停止 (Space)")
-
-                Group {
-                    Button { store.step(frames: 1) } label: {
-                        Image(systemName: "forward.frame.fill")
-                    }
-                    .help("1 フレーム進む (→)")
-                    Button { store.seek(to: store.outputEnd) } label: {
-                        Image(systemName: "forward.end.fill")
-                    }
-                    .help("末尾へ")
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .opacity(isTransportHovered ? 1 : 0)
-                .allowsHitTesting(isTransportHovered)
-            }
-        }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
-        .frame(height: 34)
-        .contentShape(Rectangle())
-        .onHover { inside in
-            withAnimation(.easeInOut(duration: 0.14)) {
-                isTransportHovered = inside
-            }
-        }
-    }
-
-    private var recordingControl: some View {
-        HStack(spacing: 8) {
-            if recorder.isRecording {
-                LevelMeter(level: recorder.level)
-                    .frame(width: 60, height: 8)
-                Button {
-                    toggleRecording()
-                } label: {
-                    Label("停止", systemImage: "stop.circle.fill")
-                        .foregroundStyle(Color.red)
-                }
-                .labelStyle(.titleAndIcon)
-                .help("録音を停止")
-            } else {
-                Button {
-                    toggleRecording()
-                } label: {
-                    Image(systemName: "mic")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .help("マイクから録音してタイムラインに置く")
-            }
-        }
+        TransportControls(store: store, recorder: recorder, toggleRecording: toggleRecording)
     }
 
     private func toggleRecording() {
@@ -396,6 +291,75 @@ struct ContentView: View {
             } else {
                 await store.importAndAppend(urls: urls)
             }
+        }
+    }
+}
+
+/// 再生操作。下段の見出し行（タイムライン・字幕のどちらのタブでも）に並べる。
+///
+/// 再生とコマ送り、時刻だけを置く。先頭へ・末尾へは「編集操作」メニューから。
+/// 録音もここに置く。録音中はレベルと停止を出す。
+struct TransportControls: View {
+    @Bindable var store: EditorStore
+    let recorder: AudioRecorder
+    let toggleRecording: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Button { store.step(frames: -1) } label: {
+                    Image(systemName: "backward.frame.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                .help("1 フレーム戻る (←)")
+                Button { store.togglePlay() } label: {
+                    Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .help("再生 / 一時停止 (Space)")
+                Button { store.step(frames: 1) } label: {
+                    Image(systemName: "forward.frame.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                .help("1 フレーム進む (→)")
+            }
+
+            HStack(spacing: 4) {
+                Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
+                    .font(.system(.callout, design: .monospaced))
+                Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .monospacedDigit()
+            .fixedSize()
+
+            if store.isBuilding {
+                ProgressView().controlSize(.small)
+            }
+
+            recordingControl
+        }
+        .buttonStyle(.borderless)
+    }
+
+    @ViewBuilder
+    private var recordingControl: some View {
+        if recorder.isRecording {
+            LevelMeter(level: recorder.level)
+                .frame(width: 48, height: 6)
+            Button(action: toggleRecording) {
+                Image(systemName: "stop.circle.fill").foregroundStyle(Color.red)
+            }
+            .help("録音を停止")
+        } else {
+            Button(action: toggleRecording) {
+                Image(systemName: "mic")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .help("マイクから録音してタイムラインに置く")
         }
     }
 }
