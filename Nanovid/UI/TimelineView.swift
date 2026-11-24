@@ -1325,7 +1325,7 @@ private struct TrackHeaderView: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: track.kind == .video ? "film" : "waveform")
+            Image(systemName: ClipKindIcon.name(for: track, project: store.project))
                 .foregroundStyle(.secondary)
                 .font(.caption)
             Text(track.name)
@@ -1395,6 +1395,32 @@ private struct TrackHeaderView: View {
 }
 
 // MARK: - クリップ
+
+/// クリップの種類のアイコン。クリップとトラックの見出しで同じものを使う
+/// （種類は色ではなくアイコンで見分けるので、両方でそろっていないと迷う）。
+enum ClipKindIcon {
+    static let text = "textformat"
+    static let video = "film"
+    static let image = "photo"
+    static let audio = "waveform"
+
+    static func name(for clip: Clip, in track: Track, project: Project) -> String {
+        if clip.content.textInstance != nil { return text }
+        if track.kind == .audio { return audio }
+        if let id = clip.content.assetID, project.asset(id)?.kind == .image { return image }
+        return video
+    }
+
+    /// トラックの見出し。トラックの種類は映像と音声しかないので、映像のトラックは
+    /// 載っているクリップから決める。全部が同じ種類ならそのアイコン（テロップだけの
+    /// トラックは「あぁ」）、混ざっている・空のときは映像。
+    static func name(for track: Track, project: Project) -> String {
+        if track.kind == .audio { return audio }
+        let kinds = Set(track.clips.map { name(for: $0, in: track, project: project) })
+        return kinds.count == 1 ? kinds.first! : video
+    }
+}
+
 
 /// タイムラインの色。種類で色分けはせず、トラックの地をグレーにして、
 /// クリップはその上に白（ダークではほぼ黒）の塗り、文字はいちばん強い色で載せる。
@@ -1518,12 +1544,7 @@ private struct ClipView: View {
 
     private var isText: Bool { clip.content.textInstance != nil }
 
-    private var icon: String {
-        if isText { return "textformat" }
-        if track.kind == .audio { return "waveform" }
-        if let id = clip.content.assetID, store.project.asset(id)?.kind == .image { return "photo" }
-        return "film"
-    }
+    private var icon: String { ClipKindIcon.name(for: clip, in: track, project: store.project) }
 
     private var label: String {
         if let inst = clip.content.textInstance {
