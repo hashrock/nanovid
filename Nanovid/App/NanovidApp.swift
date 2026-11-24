@@ -36,6 +36,7 @@ struct NanovidApp: App {
 
     @State private var store = EditorStore()
     @State private var recents = RecentProjects.shared
+    @State private var session = WindowSession()
     @Environment(\.openWindow) private var openWindow
     static let mainWindowID = "main"
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -54,7 +55,7 @@ struct NanovidApp: App {
         // （AppDelegate.openPendingDocument）。
         let _ = appDelegate.openMainWindow = { [openWindow] in openWindow(id: Self.mainWindowID) }
         WindowGroup(id: Self.mainWindowID) {
-            ContentView(store: store)
+            ContentView(store: store, session: session)
                 .frame(minWidth: 1100, minHeight: 700)
                 #if DEBUG
                 // スクリーンショット用。メニューの中身を窓の中に並べる（RecentShotView）。
@@ -115,7 +116,13 @@ struct NanovidApp: App {
                 Button("別名で保存…") { store.saveAs() }
                     .keyboardShortcut("s", modifiers: [.command, .shift])
                 Divider()
-                // 動画（ツールバーの「書き出し」）のほかに外へ出せるもの。
+                Button("プロジェクト設定…") { session.showProjectSettings = true }
+                    .keyboardShortcut("p", modifiers: [.command, .shift])
+                Divider()
+                Button("動画を書き出す…") { session.showExport = true }
+                    .keyboardShortcut("e")
+                    .disabled(store.duration <= 0)
+                // 動画のほかに外へ出せるもの。
                 // 形式を選ぶと、置き場所を選ぶ保存パネルが出る。
                 Menu("音声を書き出す") {
                     Button("M4A（AAC）…") { store.exportAudioWithPanel(format: .m4a) }
@@ -189,6 +196,12 @@ struct NanovidApp: App {
                 Divider()
                 Button("1 フレーム戻る (←)") { store.step(frames: -1) }
                 Button("1 フレーム進む (→)") { store.step(frames: 1) }
+                Button("先頭へ移動") { store.seek(to: 0) }
+                Button("末尾へ移動") { store.seek(to: store.outputEnd) }
+                Divider()
+                Button(session.isRecording ? "録音を停止" : "マイクから録音") {
+                    session.toggleRecordingCount += 1
+                }
                 Divider()
                 // ドラッグの最中に ⌥ を押すと、そのあいだだけこの設定と逆になる。
                 Toggle("クリップを吸着させる", isOn: $snappingEnabled)

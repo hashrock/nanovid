@@ -1,23 +1,35 @@
 import AVFoundation
 import SwiftUI
 
+/// 窓とアプリメニューのあいだで共有する、その場限りの画面状態。
+@Observable
+final class WindowSession {
+    var showExport = false
+    var showProjectSettings = false
+    var toggleRecordingCount = 0
+    var isRecording = false
+}
+
 struct ContentView: View {
     @Bindable var store: EditorStore
+    @Bindable var session: WindowSession
 
     @State private var recorder = AudioRecorder()
-    @State private var showExport = false
     @State private var editingTemplateID: UUID?
     /// 録音を始めたときの再生ヘッド位置。止めたらそこへ置く。
     @State private var recordingAnchor: Double = 0
 
-    // レイアウト。素材パネルは使う場面が限られるので既定では閉じておく。
+    // レイアウト。素材パネルもインスペクタも既定で閉じ、⌘1 / ⌘2 とツールバーで開閉する。
+    // 選択に合わせて勝手に開閉すると、選ぶたびにプレビューの幅が変わって落ち着かない。
     @State private var showLibrary = false
-    @State private var showInspector = true
+    @State private var showInspector = false
     @State private var libraryWidth: CGFloat = 230
-    @State private var inspectorWidth: CGFloat = 290
+    @State private var inspectorWidth: CGFloat = 276
     /// 下段の高さ。窓を広げたぶんは上段（プレビュー）に回したいので、
     /// 上段ではなく下段の高さを持つ。
-    @State private var bottomHeight: CGFloat = 240
+    /// 既定は、見出し行・ルーラー・3 トラック・横スクロールバーがちょうど収まる高さ
+    /// （TimelineView の寸法から求める）。
+    @State private var bottomHeight: CGFloat = TimelineView.fittingHeight(lanes: 3)
     @State private var bottomTab: BottomTab = .timeline
 
     private let topMinHeight: CGFloat = 220
@@ -42,7 +54,8 @@ struct ContentView: View {
         }
         .toolbar { toolbarContent }
         .navigationTitle(store.project.name + (store.hasUnsavedChanges ? L(" — 編集中") : ""))
-        .sheet(isPresented: $showExport) { ExportView(store: store) }
+        .sheet(isPresented: $session.showExport) { ExportView(store: store) }
+        .sheet(isPresented: $session.showProjectSettings) { ProjectSettingsSheet(store: store) }
         .sheet(item: Binding(
             get: { editingTemplateID.map { IdentifiedUUID(id: $0) } },
             set: { editingTemplateID = $0?.id }
@@ -61,13 +74,97 @@ struct ContentView: View {
             loadDroppedURLs(providers)
             return true
         }
+        .onChange(of: session.toggleRecordingCount) { _, _ in
+            toggleRecording()
+        }
+        .onChange(of: recorder.isRecording) { _, active in
+            session.isRecording = active
+        }
         .focusedSceneValue(\.editorStore, store)
+        #if DEBUG
+        .task { await applyShotState() }
+        #endif
     }
+
+    #if DEBUG
+    /// スクリーンショット用（デバッグビルドだけ）。本物のクリックを送らずに、
+    /// 起動引数で画面の状態を作る。
+    ///
+    ///   --shot-media <ファイル>...   取り込んでタイムラインに並べる（-- で始まる引数まで）
+    ///   --shot-state <状態>          select-text / select-media / select-audio / export / library / text-tab
+    ///   --shot-size <幅>x<高さ>      窓の大きさ
+    ///   --shot-appearance light|dark 外観（システムの設定を変えずに、このアプリだけ）
+    @MainActor
+    private func applyShotState() async {
+        let args = CommandLine.arguments
+        if let i = args.firstIndex(of: "--shot-appearance"), args.count > i + 1 {
+            NSApp.appearance = NSAppearance(named: args[i + 1] == "dark" ? .darkAqua : .aqua)
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        if let i = args.firstIndex(of: "--shot-size"), args.count > i + 1 {
+            let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
+            if parts.count == 2, let window = NSApp.windows.first(where: { $0.isVisible }) {
+                window.setFrame(NSRect(x: 80, y: 80, width: parts[0], height: parts[1]), display: true)
+            }
+        }
+        if let i = args.firstIndex(of: "--shot-media") {
+            let urls = args[(i + 1)...].prefix { !$0.hasPrefix("--") }.map { URL(fileURLWithPath: $0) }
+            // --open の読み込みが済んでから足す。
+            try? await Task.sleep(for: .milliseconds(300))
+            let assets = await store.importAssets(urls: urls)
+            // 映像と画像は、テロップの無い映像トラックへ順に並べる。
+            var cursor: [UUID: Double] = [:]
+            for asset in assets {
+                let kind: TrackKind = asset.kind == .audio ? .audio : .video
+                guard let track = store.project.tracks.first(where: { t in
+                    t.kind == kind && !t.clips.contains { if case .text = $0.content { true } else { false } }
+                }) else { continue }
+                let at = cursor[track.id] ?? track.duration
+                store.addMediaClip(assetID: asset.id, trackID: track.id, at: at)
+                cursor[track.id] = at + (asset.kind == .image ? 5 : asset.duration)
+            }
+        }
+        guard let i = args.firstIndex(of: "--shot-state"), args.count > i + 1 else { return }
+        try? await Task.sleep(for: .milliseconds(500))
+        let clips = store.project.tracks.flatMap(\.clips)
+        switch args[i + 1] {
+        case "inspector":
+            showInspector = true
+        case "select-text":
+            if let clip = clips.first(where: { if case .text = $0.content { true } else { false } }) {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+                showInspector = true
+            }
+        case "select-media":
+            if let clip = clips.first(where: { if case .media = $0.content { true } else { false } }) {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+                showInspector = true
+            }
+        case "select-audio":
+            if let track = store.project.tracks.first(where: { $0.kind == .audio }),
+               let clip = track.clips.first {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+                showInspector = true
+            }
+        case "export": session.showExport = true
+        case "library": showLibrary = true
+        case "text-tab": bottomTab = .text
+        default: break
+        }
+    }
+    #endif
 
     /// 窓が縮んでも上段が潰れないように収める。
     private func resolvedBottomHeight(in total: CGFloat) -> CGFloat {
         let available = max(bottomMinHeight, total - topMinHeight)
         return min(max(bottomHeight, bottomMinHeight), available)
+    }
+
+    private func toggleInspector() {
+        withAnimation(.easeInOut(duration: 0.16)) { showInspector.toggle() }
     }
 
     // MARK: - 上段
@@ -80,16 +177,13 @@ struct ContentView: View {
                 PaneDivider.Vertical(width: $libraryWidth, range: 180...400)
             }
 
-            VStack(spacing: 0) {
-                PreviewPane(store: store)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                transport
-            }
-            .frame(maxWidth: .infinity)
+            // 再生操作はプレビューの下に別の行を持たず、下段の見出し行に並べる
+            // （TransportControls）。そのぶんの縦をプレビューに回す。
+            PreviewPane(store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             if showInspector {
-                PaneDivider.Vertical(width: $inspectorWidth, range: 240...460, trailing: true)
+                PaneDivider.Vertical(width: $inspectorWidth, range: 240...420, trailing: true)
                 InspectorView(store: store)
                     .frame(width: inspectorWidth)
             }
@@ -102,59 +196,16 @@ struct ContentView: View {
     private var bottomPane: some View {
         switch bottomTab {
         case .timeline:
-            TimelineView(store: store, bottomTab: $bottomTab)
+            TimelineView(store: store, bottomTab: $bottomTab, transport: AnyView(transport))
         case .text:
-            TextClipsPane(store: store, bottomTab: $bottomTab)
+            TextClipsPane(store: store, bottomTab: $bottomTab, transport: AnyView(transport))
         }
     }
 
     // MARK: - 再生操作
 
     private var transport: some View {
-        HStack(spacing: 14) {
-            Button { store.seek(to: 0) } label: { Image(systemName: "backward.end.fill") }
-            Button { store.step(frames: -1) } label: { Image(systemName: "backward.frame.fill") }
-            Button { store.togglePlay() } label: {
-                Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
-            }
-            Button { store.step(frames: 1) } label: { Image(systemName: "forward.frame.fill") }
-            Button { store.seek(to: store.outputEnd) } label: { Image(systemName: "forward.end.fill") }
-
-            Divider().frame(height: 16)
-
-            Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                .font(.system(.callout, design: .monospaced))
-
-            if store.isBuilding {
-                ProgressView().controlSize(.small)
-            }
-
-            Spacer()
-
-            recordingControl
-        }
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 12)
-        .frame(height: 36)
-    }
-
-    private var recordingControl: some View {
-        HStack(spacing: 8) {
-            if recorder.isRecording {
-                LevelMeter(level: recorder.level)
-                    .frame(width: 60, height: 8)
-            }
-            Button {
-                toggleRecording()
-            } label: {
-                Label(recorder.isRecording ? "停止" : "録音",
-                      systemImage: recorder.isRecording ? "stop.circle.fill" : "mic.circle")
-                    .foregroundStyle(recorder.isRecording ? Color.red : Color.primary)
-            }
-            .labelStyle(.titleAndIcon)
-            .help("マイクから録音してタイムラインに置く")
-        }
+        TransportControls(store: store, recorder: recorder, toggleRecording: toggleRecording)
     }
 
     private func toggleRecording() {
@@ -194,23 +245,11 @@ struct ContentView: View {
             .help("素材とテンプレートのパネルを開閉 (⌘1)")
             .keyboardShortcut("1", modifiers: .command)
         }
-        ToolbarItem(placement: .navigation) {
-            Button { store.openProject() } label: { Label("開く", systemImage: "folder") }
-        }
-        ToolbarItem {
-            Button { store.save() } label: { Label("保存", systemImage: "square.and.arrow.down") }
-        }
-        ToolbarItem {
-            if store.isCuttingSilence {
-                ProgressView().controlSize(.small)
-            } else {
-                Menu {
-                    SilenceCutMenuItems(store: store)
-                } label: {
-                    Label("無音カット", systemImage: "waveform.badge.minus")
-                }
-                .help("喋っていない間を見つけて、全トラックから抜いて詰める")
-                .disabled(!store.canCutSilence)
+        if store.isCuttingSilence {
+            ToolbarItem {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("無音を詰めています")
             }
         }
         ToolbarItem {
@@ -221,19 +260,18 @@ struct ContentView: View {
                     .controlSize(.small)
                     .help("音声を書き出しています")
             } else {
-                Button { showExport = true } label: {
+                Button { session.showExport = true } label: {
                     Label("書き出し", systemImage: "square.and.arrow.up")
                 }
+                .help("動画を書き出す (⌘E)")
                 .disabled(store.duration <= 0)
             }
         }
         ToolbarItem {
-            Button {
-                withAnimation(.easeInOut(duration: 0.16)) { showInspector.toggle() }
-            } label: {
+            Button(action: toggleInspector) {
                 Label("インスペクタ", systemImage: "sidebar.trailing")
             }
-            .help("右のパネルを開閉 (⌘2)")
+            .help("インスペクタを開閉 (⌘2)")
             .keyboardShortcut("2", modifiers: .command)
         }
     }
@@ -253,6 +291,75 @@ struct ContentView: View {
             } else {
                 await store.importAndAppend(urls: urls)
             }
+        }
+    }
+}
+
+/// 再生操作。下段の見出し行（タイムライン・字幕のどちらのタブでも）に並べる。
+///
+/// 再生とコマ送り、時刻だけを置く。先頭へ・末尾へは「編集操作」メニューから。
+/// 録音もここに置く。録音中はレベルと停止を出す。
+struct TransportControls: View {
+    @Bindable var store: EditorStore
+    let recorder: AudioRecorder
+    let toggleRecording: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Button { store.step(frames: -1) } label: {
+                    Image(systemName: "backward.frame.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                .help("1 フレーム戻る (←)")
+                Button { store.togglePlay() } label: {
+                    Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 14))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .help("再生 / 一時停止 (Space)")
+                Button { store.step(frames: 1) } label: {
+                    Image(systemName: "forward.frame.fill").font(.caption).foregroundStyle(.secondary)
+                }
+                .help("1 フレーム進む (→)")
+            }
+
+            HStack(spacing: 4) {
+                Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
+                    .font(.system(.callout, design: .monospaced))
+                Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .monospacedDigit()
+            .fixedSize()
+
+            if store.isBuilding {
+                ProgressView().controlSize(.small)
+            }
+
+            recordingControl
+        }
+        .buttonStyle(.borderless)
+    }
+
+    @ViewBuilder
+    private var recordingControl: some View {
+        if recorder.isRecording {
+            LevelMeter(level: recorder.level)
+                .frame(width: 48, height: 6)
+            Button(action: toggleRecording) {
+                Image(systemName: "stop.circle.fill").foregroundStyle(Color.red)
+            }
+            .help("録音を停止")
+        } else {
+            Button(action: toggleRecording) {
+                Image(systemName: "mic")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Rectangle())
+            }
+            .help("マイクから録音してタイムラインに置く")
         }
     }
 }

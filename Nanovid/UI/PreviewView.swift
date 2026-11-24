@@ -82,7 +82,7 @@ struct PreviewPane: View {
                 if store.project.contentEnd <= 0 {
                     Text("タイムラインに素材かテキストを追加してください")
                         .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.55))
                 } else if store.isOutsideOutput {
                     // 範囲の外では AVPlayer が端のフレームに張り付くので、
                     // そのままだと「まだ中身がある」ように見えてしまう。

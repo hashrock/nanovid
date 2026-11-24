@@ -17,19 +17,14 @@ struct ExportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("書き出し").font(.title3.bold())
+            VStack(alignment: .leading, spacing: 4) {
+                Text("書き出し").font(.title3.bold())
+                Text("\(canvas.width) × \(canvas.height) · \(canvas.fps)fps · \(Format.timecode(store.duration, fps: canvas.fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
 
-            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 10) {
-                GridRow {
-                    Text("解像度").foregroundStyle(.secondary)
-                    Text("\(canvas.width) × \(canvas.height) · \(canvas.fps)fps")
-                        .font(.system(.body, design: .monospaced))
-                }
-                GridRow {
-                    Text("長さ").foregroundStyle(.secondary)
-                    Text(Format.timecode(store.duration, fps: canvas.fps))
-                        .font(.system(.body, design: .monospaced))
-                }
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 12) {
                 GridRow {
                     Text("コーデック").foregroundStyle(.secondary)
                     Picker("", selection: $settings.codec) {
@@ -38,20 +33,19 @@ struct ExportView: View {
                     .labelsHidden()
                     .fixedSize()
                 }
-                GridRow {
+                GridRow(alignment: .firstTextBaseline) {
                     Text("画質").foregroundStyle(.secondary)
-                    Picker("", selection: $settings.quality) {
-                        ForEach(ExportSettings.Quality.allCases) { Text($0.label).tag($0) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Picker("", selection: $settings.quality) {
+                            ForEach(ExportSettings.Quality.allCases) { Text($0.label).tag($0) }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.segmented)
+                        .fixedSize()
+                        Text(estimate)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .fixedSize()
-                }
-                GridRow {
-                    Text("目安").foregroundStyle(.secondary)
-                    Text(estimate)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
                 }
                 GridRow {
                     Text("出力先").foregroundStyle(.secondary)
@@ -59,6 +53,7 @@ struct ExportView: View {
                         Text(outputURL?.lastPathComponent ?? L("未選択"))
                             .lineLimit(1)
                             .truncationMode(.middle)
+                        Spacer(minLength: 8)
                         Button("選択…") { chooseOutput() }
                     }
                 }
@@ -89,7 +84,7 @@ struct ExportView: View {
                 }
             }
 
-            Spacer(minLength: 0)
+            Divider()
 
             HStack {
                 Spacer()
@@ -107,7 +102,8 @@ struct ExportView: View {
             }
         }
         .padding(20)
-        .frame(width: 460, height: 380)
+        .frame(width: 420)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
     /// 進み具合の百分率。"%" を付けた文字列を先に作って渡す。

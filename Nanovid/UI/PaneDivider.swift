@@ -46,6 +46,10 @@ enum PaneDivider {
     }
 
     /// 横に伸びる仕切り。下段の高さを変える。
+    ///
+    /// 並びの中で占めるのは線の 1pt だけにし、つかめる幅（thickness）は上下に
+    /// はみ出して重ねる。帯ごと並べると、線の下の半分が下段の見出し行の上に
+    /// 余白として足され、見出しのコントロールが上下で偏って見える。
     struct Horizontal: View {
         @Binding var bottomHeight: CGFloat
         let range: ClosedRange<CGFloat>
@@ -53,30 +57,33 @@ enum PaneDivider {
         @State private var startHeight: CGFloat?
 
         var body: some View {
-            ZStack {
-                Color.clear
-                Rectangle()
-                    .fill(Color(nsColor: .separatorColor))
-                    .frame(height: 1)
-            }
-            .frame(height: PaneDivider.thickness)
-            .contentShape(Rectangle())
-            .onHover { inside in
-                if inside { NSCursor.resizeUpDown.set() } else { NSCursor.arrow.set() }
-            }
-            // 画面全体の座標で測る。仕切り自身がドラッグで動くので、
-            // 既定のローカル空間だと移動量が縮んでついてこない。
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                    .onChanged { value in
-                        let base = startHeight ?? bottomHeight
-                        if startHeight == nil { startHeight = bottomHeight }
-                        // 下へドラッグ＝下段が縮む
-                        let next = base - Double(value.translation.height)
-                        bottomHeight = min(max(next, range.lowerBound), range.upperBound)
-                    }
-                    .onEnded { _ in startHeight = nil }
-            )
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(height: 1)
+                .frame(maxWidth: .infinity)
+                .overlay {
+                    Color.clear
+                        .frame(height: PaneDivider.thickness)
+                        .contentShape(Rectangle())
+                        .onHover { inside in
+                            if inside { NSCursor.resizeUpDown.set() } else { NSCursor.arrow.set() }
+                        }
+                        // 画面全体の座標で測る。仕切り自身がドラッグで動くので、
+                        // 既定のローカル空間だと移動量が縮んでついてこない。
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                                .onChanged { value in
+                                    let base = startHeight ?? bottomHeight
+                                    if startHeight == nil { startHeight = bottomHeight }
+                                    // 下へドラッグ＝下段が縮む
+                                    let next = base - Double(value.translation.height)
+                                    bottomHeight = min(max(next, range.lowerBound), range.upperBound)
+                                }
+                                .onEnded { _ in startHeight = nil }
+                        )
+                }
+                // つかむ範囲が上下のパネルの下に潜らないよう、手前に出す。
+                .zIndex(1)
         }
     }
 }
