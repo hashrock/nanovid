@@ -15,17 +15,18 @@ struct TimelineView: View {
     /// 読める大きさにしておく。
     static let clipFontSize: CGFloat = 12
     static let clipIconSize: CGFloat = 12
-    /// トラックの高さ。クリップの中身は 1 行のラベル（＋アイコン）だけなので、
+    /// トラック（＝クリップ）の高さ。クリップの中身は 1 行のラベル（＋アイコン）だけなので、
     /// その行の高さに上下の余白を足したぶんで足りる。波形や絵は描かない。
     static let laneHeight: CGFloat = {
         let line = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: clipFontSize))
-        return ceil(line) + 2 * clipPadding + 2 * clipInset
+        return ceil(line) + 2 * clipPadding
     }()
     /// クリップの中の、ラベルの上下の余白。
-    static let clipPadding: CGFloat = 3
-    /// トラックの中の、クリップの上下の隙間。上下同じだけ空ける。
-    static let clipInset: CGFloat = 3
-    static let laneGap: CGFloat = 2
+    static let clipPadding: CGFloat = 4
+    /// クリップの縦の間隔。トラックの並びの間隔として 1 回だけ空け、
+    /// いちばん上（ルーラーの下）といちばん下の外側も同じ幅にする。
+    /// クリップやトラックごとに上下の余白を持たせると、隣り合うところで 2 倍になる。
+    static let laneGap: CGFloat = 3
     static let rulerHeight: CGFloat = 18
     /// 横スクロールバーの行の高さ。
     static let scrollBarHeight: CGFloat = 13
@@ -33,7 +34,7 @@ struct TimelineView: View {
     /// 見出し行・ルーラー・n 本のトラック・横スクロールバーがちょうど収まる高さ。
     static func fittingHeight(lanes: Int) -> CGFloat {
         toolbarHeight + 1 + rulerHeight
-            + CGFloat(lanes) * (laneHeight + laneGap) - laneGap
+            + CGFloat(lanes) * laneHeight + CGFloat(lanes + 1) * laneGap
             + scrollBarHeight
     }
     static let minZoom: Double = 8
@@ -92,12 +93,12 @@ struct TimelineView: View {
 
     /// レーンを縦に並べたときの高さ。
     ///
-    /// 各レーンの下に隙間を入れているが、いちばん下の隙間は数えない。
-    /// 数えると、ちょうど収まる本数でも隙間ぶんだけはみ出したことになり、
-    /// スクロールバーが出っぱなしになる（ホイールもそこへ吸われる）。
+    /// レーンの間と、いちばん上・いちばん下の外側に同じ隙間（laneGap）を空ける。
+    /// fittingHeight と同じ数え方にそろえる。ずれるとちょうど収まる本数でも
+    /// はみ出したことになり、スクロールバーが出っぱなしになる。
     private var lanesHeight: CGFloat {
         guard !lanes.isEmpty else { return 0 }
-        return CGFloat(lanes.count) * (Self.laneHeight + Self.laneGap) - Self.laneGap
+        return CGFloat(lanes.count) * Self.laneHeight + CGFloat(lanes.count + 1) * Self.laneGap
     }
 
     private var maxScrollX: Double {
@@ -322,13 +323,13 @@ struct TimelineView: View {
             // タイムライン全体の最小高さがトラック数ぶんに固定されてしまう。
             // 枠が足りないとはみ出して、上のトランスポートに重なる。
             GeometryReader { _ in
-                VStack(spacing: 0) {
+                VStack(spacing: Self.laneGap) {
                     ForEach(lanes) { track in
                         TrackHeaderView(store: store, track: track)
                             .frame(width: Self.headerWidth, height: Self.laneHeight)
-                            .padding(.bottom, Self.laneGap)
                     }
                 }
+                .padding(.vertical, Self.laneGap)
                 .offset(y: -offsetY)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
@@ -349,11 +350,14 @@ struct TimelineView: View {
             // 目盛りの位置まで上がってくるが、clipped() は描画を隠すだけでクリックは
             // 奪ったままになるため、前面に無いと目盛りが押せなくなる。
             ZStack(alignment: .topLeading) {
-                VStack(alignment: .leading, spacing: 0) {
+                // 隙間はトラックの並びの間隔で 1 回だけ。地は隙間も含めて同じグレーにして、
+                // トラックの間に別の色の帯が見えないようにする。
+                VStack(alignment: .leading, spacing: Self.laneGap) {
                     ForEach(lanes) { track in
                         laneView(track)
                     }
                 }
+                .padding(.vertical, Self.laneGap)
                 .offset(x: -offsetX, y: -offsetY)
                 .frame(width: geo.size.width,
                        height: max(0, geo.size.height - Self.rulerHeight),
@@ -371,7 +375,7 @@ struct TimelineView: View {
             .overlay(alignment: .topLeading) { playhead }
             .overlay(alignment: .topLeading) { marqueeOverlay }
             .overlay(alignment: .topTrailing) { verticalScrollBar }
-            .background(Color(nsColor: .underPageBackgroundColor))
+            .background(TimelinePalette.lane)
             // クリップのドラッグはこの空間で測る。クリップ自身は .offset で動くので、
             // ジェスチャをクリップのローカル空間で測ると位置が振動してしまう。
             .coordinateSpace(.named(Self.laneSpaceName))
@@ -404,7 +408,6 @@ struct TimelineView: View {
             }
         }
         .frame(width: contentWidth, height: Self.laneHeight, alignment: .topLeading)
-        .padding(.bottom, Self.laneGap)
         .dropDestination(for: URL.self) { urls, location in
             handleDrop(urls: urls, track: track, at: location)
             return true
@@ -415,7 +418,8 @@ struct TimelineView: View {
 
     private func laneBackground(_ track: Track) -> Color {
         if dropTargetTrack == track.id { return Color.accentColor.opacity(0.18) }
-        return TimelinePalette.lane.opacity(track.isHidden ? 0.5 : 1)
+        // 地のグレーは下（laneArea）に敷いてある。隠したトラックだけ白っぽく伏せる。
+        return track.isHidden ? Color(nsColor: .windowBackgroundColor).opacity(0.5) : .clear
     }
 
     // MARK: - 右クリックメニュー
@@ -507,8 +511,7 @@ struct TimelineView: View {
             }
             .disabled(track.isLocked)
         }
-        .frame(width: width, height: Self.laneHeight - 2 * Self.clipInset)
-        .padding(.vertical, Self.clipInset)
+        .frame(width: width, height: Self.laneHeight)
         .offset(x: CGFloat(TimelineScroll.contentX(forTime: preview.start,
                                                    pixelsPerSecond: pps)))
         .offset(y: dragLaneOffset(for: clip))
@@ -665,7 +668,8 @@ struct TimelineView: View {
 
     /// 表示座標の y から段番号を出す。はみ出したぶんは端の段に寄せる。
     private func laneIndex(atViewportY y: Double) -> Int {
-        let local = y - Double(Self.rulerHeight) + offsetY
+        // いちばん上の外側の隙間を引く。レーンの間の隙間は、下のレーンに含める。
+        let local = y - Double(Self.rulerHeight) + offsetY - Double(Self.laneGap)
         let step = Double(Self.laneHeight + Self.laneGap)
         let raw = Int(floor(local / step))
         return min(max(raw, 0), max(0, lanes.count - 1))
