@@ -101,6 +101,9 @@ struct TextClipsPane: View {
             }
         }
         .buttonStyle(.borderless)
+        // 30pt の行に収まるよう、見出しのコントロールは小さいサイズにそろえる
+        // （通常サイズのセグメントは 24pt あり、上下に 3pt しか残らない）。
+        .controlSize(.small)
         .padding(.horizontal, 10)
         .frame(height: TimelineView.toolbarHeight)
     }
