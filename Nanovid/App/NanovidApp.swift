@@ -35,6 +35,7 @@ struct NanovidApp: App {
     }
 
     @State private var store = EditorStore()
+    @State private var recents = RecentProjects.shared
     @Environment(\.openWindow) private var openWindow
     static let mainWindowID = "main"
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
@@ -78,6 +79,18 @@ struct NanovidApp: App {
                     .keyboardShortcut("n")
                 Button("開く…") { store.openProject() }
                     .keyboardShortcut("o")
+                // NSDocument を使わないので標準のメニューは出てこない。記録は
+                // NSDocumentController の標準のもの（端末ローカル）をそのまま使う。
+                Menu("最近使った項目を開く") {
+                    let urls = recents.urls
+                    let titles = RecentProjects.titles(for: urls)
+                    ForEach(Array(zip(urls, titles)), id: \.0) { url, title in
+                        Button(title) { store.openRecent(url) }
+                    }
+                    if !urls.isEmpty { Divider() }
+                    Button("メニューを消去") { recents.clear() }
+                        .disabled(urls.isEmpty)
+                }
                 Divider()
                 // 開いたときの案内を「あとで」にした場合の入口。
                 Button("素材の場所を指定…") { store.locateMissingMedia() }

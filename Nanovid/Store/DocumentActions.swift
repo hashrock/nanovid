@@ -43,7 +43,7 @@ extension EditorStore {
             hasUnsavedChanges = relocated
             resetHistory()
             TextRasterizer.shared.invalidateAll()
-            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            RecentProjects.shared.note(url)
         } catch {
             presentError(L("開けませんでした"), error.localizedDescription)
             return
@@ -146,7 +146,7 @@ extension EditorStore {
             documentURL = url
             project.name = url.deletingPathExtension().lastPathComponent
             hasUnsavedChanges = false
-            NSDocumentController.shared.noteNewRecentDocumentURL(url)
+            RecentProjects.shared.note(url)
             return true
         } catch {
             presentError(L("保存できませんでした"), error.localizedDescription)

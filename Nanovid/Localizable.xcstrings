@@ -439,6 +439,16 @@
         }
       }
     },
+    "「%@」が見つかりません。移動したか削除された可能性があります。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "“%@” couldn’t be found. It may have been moved or deleted."
+          }
+        }
+      }
+    },
     "「%@」はこの Mac で再生できない形式です。" : {
       "comment" : "%@ はファイル名。",
       "localizations" : {
@@ -1162,6 +1172,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Microphone access is not allowed. Allow it in System Settings > Privacy & Security > Microphone."
+          }
+        }
+      }
+    },
+    "メニューを消去" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clear Menu"
           }
         }
       }
@@ -2235,6 +2255,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Couldn’t Export"
+          }
+        }
+      }
+    },
+    "最近使った項目を開く" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Recent"
           }
         }
       }
