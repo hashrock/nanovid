@@ -19,9 +19,12 @@ struct TimelineView: View {
     /// その行の高さに上下の余白を足したぶんで足りる。波形や絵は描かない。
     static let laneHeight: CGFloat = {
         let line = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: clipFontSize))
-        return ceil(line) + 2 * clipPadding
+        return ceil(line) + 2 * clipPadding + 2 * clipInset
     }()
-    static let clipPadding: CGFloat = 5
+    /// クリップの中の、ラベルの上下の余白。
+    static let clipPadding: CGFloat = 3
+    /// トラックの中の、クリップの上下の隙間。上下同じだけ空ける。
+    static let clipInset: CGFloat = 3
     static let laneGap: CGFloat = 2
     static let rulerHeight: CGFloat = 18
     /// 横スクロールバーの行の高さ。
@@ -504,7 +507,8 @@ struct TimelineView: View {
             }
             .disabled(track.isLocked)
         }
-        .frame(width: width, height: Self.laneHeight)
+        .frame(width: width, height: Self.laneHeight - 2 * Self.clipInset)
+        .padding(.vertical, Self.clipInset)
         .offset(x: CGFloat(TimelineScroll.contentX(forTime: preview.start,
                                                    pixelsPerSecond: pps)))
         .offset(y: dragLaneOffset(for: clip))
@@ -520,7 +524,7 @@ struct TimelineView: View {
         RoundedRectangle(cornerRadius: 2)
             .fill(Color.primary.opacity(visible ? 0.45 : 0.001))
             .frame(width: width)
-            .padding(.vertical, 5)
+            .padding(.vertical, 3)
             .padding(edge == .leading ? .leading : .trailing, 2)
             .contentShape(Rectangle())
             .onHover { inside in
@@ -1389,9 +1393,9 @@ private struct TrackHeaderView: View {
 // MARK: - クリップ
 
 /// タイムラインの色。種類で色分けはせず、トラックの地をグレーにして、
-/// クリップはその上に白（ダークではほぼ黒）の塗り＋はっきりした枠、文字は
-/// いちばん強い色で載せる。系統色（textBackgroundColor など）はダークで地と
-/// クリップがほぼ同じ暗さになり、枠でしか分かれないので、ここで明暗を決める。
+/// クリップはその上に白（ダークではほぼ黒）の塗り、文字はいちばん強い色で載せる。
+/// 枠は付けず、塗りと地の明暗差だけで分ける。系統色（textBackgroundColor など）は
+/// ダークで地とクリップがほぼ同じ暗さになるので、ここで明暗を決める。
 enum TimelinePalette {
     private static func dynamic(light: CGFloat, dark: CGFloat) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in
@@ -1400,12 +1404,10 @@ enum TimelinePalette {
         })
     }
 
-    /// トラックの地。
-    static let lane = dynamic(light: 0.62, dark: 0.30)
+    /// トラックの地。枠が無くてもクリップとはっきり分かれる明るさにする。
+    static let lane = dynamic(light: 0.62, dark: 0.42)
     /// クリップの塗り。
     static let clipFill = dynamic(light: 1.0, dark: 0.06)
-    /// クリップの枠。
-    static let clipBorder = dynamic(light: 0.20, dark: 0.85)
     /// クリップのラベルとアイコン。
     static let clipText = dynamic(light: 0.0, dark: 1.0)
 }
@@ -1437,12 +1439,14 @@ private struct ClipView: View {
             .foregroundStyle(TimelinePalette.clipText)
             .padding(.horizontal, 7)
         }
-        .overlay(
-            // 色はアクセントだけ。選んだクリップを見分けるのに使う。
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(isSelected ? Color.accentColor : TimelinePalette.clipBorder,
-                              lineWidth: isSelected ? 2.5 : 1)
-        )
+        .overlay {
+            // 枠は付けない（塗りと地の明暗差で分ける）。色はアクセントだけで、
+            // 選んだクリップを見分けるのに使う。
+            if isSelected {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(Color.accentColor, lineWidth: 2.5)
+            }
+        }
         .opacity(isDragging ? 0.75 : 1)
         .contentShape(RoundedRectangle(cornerRadius: 4))
         .onTapGesture {
