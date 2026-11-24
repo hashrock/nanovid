@@ -56,6 +56,16 @@ struct NanovidApp: App {
         WindowGroup(id: Self.mainWindowID) {
             ContentView(store: store)
                 .frame(minWidth: 1100, minHeight: 700)
+                #if DEBUG
+                // スクリーンショット用。メニューの中身を窓の中に並べる（RecentShotView）。
+                .overlay {
+                    if let urls = RecentShotView.requestedURLs {
+                        RecentShotView(recorded: urls)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                            .background(.background)
+                    }
+                }
+                #endif
                 .onAppear(perform: openProjectFromArguments)
                 .modifier(AppDelegateLink(delegate: appDelegate, store: store))
                 // AI から操作するための MCP は、App Store 用ビルドには入れない。
