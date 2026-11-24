@@ -6,7 +6,7 @@ struct TimelineView: View {
     @Bindable var store: EditorStore
     @Binding var bottomTab: BottomTab
 
-    static let headerWidth: CGFloat = 176
+    static let headerWidth: CGFloat = 148
     static let laneHeight: CGFloat = 56
     static let laneGap: CGFloat = 4
     static let rulerHeight: CGFloat = 24
@@ -110,60 +110,87 @@ struct TimelineView: View {
         HStack(spacing: 10) {
             BottomTabPicker(selection: $bottomTab)
 
-            Divider().frame(height: 16)
-
-            Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                .font(.system(.callout, design: .monospaced))
-            Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-
-            Divider().frame(height: 16)
+            Divider().frame(height: 14)
 
             Button { store.splitAtPlayhead() } label: { Label("分割", systemImage: "scissors") }
                 .help("再生ヘッドの位置でクリップを分割 (S)")
-            Button { store.deleteSelection() } label: { Label("削除", systemImage: "trash") }
-                .disabled(store.selectedClipIDs.isEmpty)
-            Button { store.duplicateSelection() } label: {
-                Label("複製", systemImage: "plus.square.on.square")
-            }
-            .disabled(store.selectedClipIDs.isEmpty)
 
             if !store.selectedClipIDs.isEmpty {
-                Divider().frame(height: 16)
+                Button { store.duplicateSelection() } label: {
+                    Label("複製", systemImage: "plus.square.on.square")
+                }
+                .help("複製")
+                Button { store.deleteSelection() } label: { Label("削除", systemImage: "trash") }
+                    .help("削除 (Delete)")
+
+                Divider().frame(height: 14)
                 selectionMenu
             }
 
             if let range = store.pendingExtractRange {
-                Divider().frame(height: 16)
+                Divider().frame(height: 14)
                 extractControl(range)
             }
 
             Spacer()
 
             Menu {
+                Menu("無音を詰める") { SilenceCutMenuItems(store: store) }
+                    .disabled(!store.canCutSilence)
+                Divider()
+                Button("切り抜き開始 (Q)") { store.markExtractStart() }
+                Button("切り抜いて詰める (W)") { store.extractMarkedRange() }
+                    .disabled(store.extractStart == nil)
+                Divider()
+                Toggle("クリップを吸着させる", isOn: $snappingEnabled)
+                Divider()
                 Button("映像トラックを追加") { store.addTrack(kind: .video) }
                 Button("音声トラックを追加") { store.addTrack(kind: .audio) }
             } label: {
-                Label("トラック", systemImage: "plus")
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, height: 22)
+                    .contentShape(Rectangle())
             }
             .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
             .fixedSize()
+            .help("その他の操作")
 
-            Button { zoomStep(0.8) } label: { Image(systemName: "minus.magnifyingglass") }
-            Slider(value: Binding(
-                get: { pps },
-                set: { zoom(to: $0, anchorX: Double(viewport.width) / 2) }
-            ), in: Self.minZoom...Self.maxZoom)
-            .frame(width: 130)
-            Button { zoomStep(1.25) } label: { Image(systemName: "plus.magnifyingglass") }
-            Button { zoomToFit() } label: { Image(systemName: "arrow.left.and.right") }
-                .help("全体が収まるまで縮小")
+            Divider().frame(height: 14)
+
+            HStack(spacing: 5) {
+                Button { zoomStep(0.8) } label: {
+                    Image(systemName: "minus")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .help("縮小 (-)")
+                Slider(value: Binding(
+                    get: { pps },
+                    set: { zoom(to: $0, anchorX: Double(viewport.width) / 2) }
+                ), in: Self.minZoom...Self.maxZoom)
+                .controlSize(.small)
+                .frame(width: 84)
+                Button { zoomStep(1.25) } label: {
+                    Image(systemName: "plus")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                .help("拡大 (+)")
+                Button { zoomToFit() } label: {
+                    Image(systemName: "arrow.left.and.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .help("全体が収まるまで縮小 (F)")
+                .padding(.leading, 2)
+            }
         }
         .buttonStyle(.borderless)
         .labelStyle(.iconOnly)
         .padding(.horizontal, 10)
-        .frame(height: 34)
+        .frame(height: 32)
     }
 
     /// 切り抜きの範囲を打っているあいだの表示と操作。
@@ -238,7 +265,25 @@ struct TimelineView: View {
 
     private var headerColumn: some View {
         VStack(spacing: 0) {
-            Color.clear.frame(width: Self.headerWidth, height: Self.rulerHeight)
+            HStack {
+                Spacer()
+                Menu {
+                    Button("映像トラックを追加") { store.addTrack(kind: .video) }
+                    Button("音声トラックを追加") { store.addTrack(kind: .audio) }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Rectangle())
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("トラックを追加")
+            }
+            .padding(.horizontal, 6)
+            .frame(width: Self.headerWidth, height: Self.rulerHeight)
             // GeometryReader で包んで、中身の高さに引きずられないようにする。
             // 並べたヘッダは固定高なので、そのままだとこの列が縮まず、
             // タイムライン全体の最小高さがトラック数ぶんに固定されてしまう。
@@ -1238,8 +1283,10 @@ private struct TrackHeaderView: View {
     @Bindable var store: EditorStore
     let track: Track
 
+    @State private var isHovered = false
+
     var body: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 5) {
             Image(systemName: track.kind == .video ? "film" : "waveform")
                 .foregroundStyle(.secondary)
                 .font(.caption)
@@ -1247,22 +1294,42 @@ private struct TrackHeaderView: View {
                 .font(.caption)
                 .lineLimit(1)
             Spacer(minLength: 0)
-            if track.kind == .video {
+            if track.kind == .video, isHovered || track.isHidden {
                 toggle(systemImage: track.isHidden ? "eye.slash" : "eye", isOn: !track.isHidden) {
                     mutate { $0.isHidden.toggle() }
                 }
             }
-            toggle(systemImage: track.isMuted ? "speaker.slash" : "speaker.wave.2", isOn: !track.isMuted) {
-                mutate { $0.isMuted.toggle() }
+            if isHovered || track.isMuted {
+                toggle(systemImage: track.isMuted ? "speaker.slash" : "speaker.wave.2", isOn: !track.isMuted) {
+                    mutate { $0.isMuted.toggle() }
+                }
             }
-            toggle(systemImage: track.isLocked ? "lock" : "lock.open", isOn: !track.isLocked) {
-                mutate { $0.isLocked.toggle() }
+            if isHovered || track.isLocked {
+                toggle(systemImage: track.isLocked ? "lock" : "lock.open", isOn: !track.isLocked) {
+                    mutate { $0.isLocked.toggle() }
+                }
             }
         }
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .background(Color(nsColor: .controlBackgroundColor))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            isHovered = inside
+        }
         .contextMenu {
+            if track.kind == .video {
+                Button(track.isHidden ? "トラックを表示" : "トラックを非表示") {
+                    mutate { $0.isHidden.toggle() }
+                }
+            }
+            Button(track.isMuted ? "ミュートを解除" : "ミュート") {
+                mutate { $0.isMuted.toggle() }
+            }
+            Button(track.isLocked ? "ロックを解除" : "ロック") {
+                mutate { $0.isLocked.toggle() }
+            }
+            Divider()
             Button("上へ") { store.moveTrack(id: track.id, offset: 1) }
             Button("下へ") { store.moveTrack(id: track.id, offset: -1) }
             Divider()
@@ -1325,18 +1392,37 @@ private struct ClipView: View {
         }
         .contextMenu {
             Button("この位置で分割") {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.splitAtPlayhead()
             }
             Button("複製") {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.duplicateSelection()
             }
             Divider()
+            Button("コピー") {
+                ensureSelected()
+                store.copySelection()
+            }
+            Button("切り取り") {
+                ensureSelected()
+                store.cutSelection()
+            }
+            Divider()
+            Button("削除して詰める") {
+                ensureSelected()
+                store.rippleDeleteSelection()
+            }
             Button("削除", role: .destructive) {
-                store.selectedClipIDs = [clip.id]
+                ensureSelected()
                 store.deleteSelection()
             }
+        }
+    }
+
+    private func ensureSelected() {
+        if !store.selectedClipIDs.contains(clip.id) {
+            store.selectedClipIDs = [clip.id]
         }
     }
 

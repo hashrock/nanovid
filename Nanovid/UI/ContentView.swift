@@ -1,20 +1,31 @@
 import AVFoundation
 import SwiftUI
 
+/// 窓とアプリメニューのあいだで共有する、その場限りの画面状態。
+@Observable
+final class WindowSession {
+    var showExport = false
+    var showProjectSettings = false
+    var toggleRecordingCount = 0
+    var isRecording = false
+}
+
 struct ContentView: View {
     @Bindable var store: EditorStore
+    @Bindable var session: WindowSession
 
     @State private var recorder = AudioRecorder()
-    @State private var showExport = false
     @State private var editingTemplateID: UUID?
     /// 録音を始めたときの再生ヘッド位置。止めたらそこへ置く。
     @State private var recordingAnchor: Double = 0
+    @State private var isTransportHovered = false
 
-    // レイアウト。素材パネルは使う場面が限られるので既定では閉じておく。
+    // レイアウト。素材パネルは既定で閉じ、インスペクタはクリップ選択中だけ自動表示する。
     @State private var showLibrary = false
-    @State private var showInspector = true
+    /// nil は自動（選択中だけ表示）、true/false はユーザーの手動開閉。
+    @State private var inspectorOverride: Bool?
     @State private var libraryWidth: CGFloat = 230
-    @State private var inspectorWidth: CGFloat = 290
+    @State private var inspectorWidth: CGFloat = 276
     /// 下段の高さ。窓を広げたぶんは上段（プレビュー）に回したいので、
     /// 上段ではなく下段の高さを持つ。
     @State private var bottomHeight: CGFloat = 240
@@ -22,6 +33,10 @@ struct ContentView: View {
 
     private let topMinHeight: CGFloat = 220
     private let bottomMinHeight: CGFloat = 130
+
+    private var isInspectorShown: Bool {
+        inspectorOverride ?? !store.selectedClipIDs.isEmpty
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -42,7 +57,8 @@ struct ContentView: View {
         }
         .toolbar { toolbarContent }
         .navigationTitle(store.project.name + (store.hasUnsavedChanges ? L(" — 編集中") : ""))
-        .sheet(isPresented: $showExport) { ExportView(store: store) }
+        .sheet(isPresented: $session.showExport) { ExportView(store: store) }
+        .sheet(isPresented: $session.showProjectSettings) { ProjectSettingsSheet(store: store) }
         .sheet(item: Binding(
             get: { editingTemplateID.map { IdentifiedUUID(id: $0) } },
             set: { editingTemplateID = $0?.id }
@@ -61,6 +77,18 @@ struct ContentView: View {
             loadDroppedURLs(providers)
             return true
         }
+        .onChange(of: store.selectedClipIDs.isEmpty) { _, isEmpty in
+            // 選択中に手動で閉じていた場合、選択を解いたら自動モードに戻す。
+            if isEmpty, inspectorOverride == false {
+                inspectorOverride = nil
+            }
+        }
+        .onChange(of: session.toggleRecordingCount) { _, _ in
+            toggleRecording()
+        }
+        .onChange(of: recorder.isRecording) { _, active in
+            session.isRecording = active
+        }
         .focusedSceneValue(\.editorStore, store)
         #if DEBUG
         .task { await applyShotState() }
@@ -72,7 +100,7 @@ struct ContentView: View {
     /// 起動引数で画面の状態を作る。
     ///
     ///   --shot-media <ファイル>...   取り込んでタイムラインに並べる（-- で始まる引数まで）
-    ///   --shot-state <状態>          select-text / select-media / export / library / text-tab
+    ///   --shot-state <状態>          select-text / select-media / select-audio / export / library / text-tab
     ///   --shot-size <幅>x<高さ>      窓の大きさ
     @MainActor
     private func applyShotState() async {
@@ -115,7 +143,13 @@ struct ContentView: View {
                 store.selectedClipIDs = [clip.id]
                 store.seek(to: clip.start + 0.5)
             }
-        case "export": showExport = true
+        case "select-audio":
+            if let track = store.project.tracks.first(where: { $0.kind == .audio }),
+               let clip = track.clips.first {
+                store.selectedClipIDs = [clip.id]
+                store.seek(to: clip.start + 0.5)
+            }
+        case "export": session.showExport = true
         case "library": showLibrary = true
         case "text-tab": bottomTab = .text
         default: break
@@ -127,6 +161,16 @@ struct ContentView: View {
     private func resolvedBottomHeight(in total: CGFloat) -> CGFloat {
         let available = max(bottomMinHeight, total - topMinHeight)
         return min(max(bottomHeight, bottomMinHeight), available)
+    }
+
+    private func toggleInspector() {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            if isInspectorShown {
+                inspectorOverride = store.selectedClipIDs.isEmpty ? nil : false
+            } else {
+                inspectorOverride = store.selectedClipIDs.isEmpty ? true : nil
+            }
+        }
     }
 
     // MARK: - 上段
@@ -147,8 +191,8 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity)
 
-            if showInspector {
-                PaneDivider.Vertical(width: $inspectorWidth, range: 240...460, trailing: true)
+            if isInspectorShown {
+                PaneDivider.Vertical(width: $inspectorWidth, range: 240...420, trailing: true)
                 InspectorView(store: store)
                     .frame(width: inspectorWidth)
             }
@@ -170,32 +214,76 @@ struct ContentView: View {
     // MARK: - 再生操作
 
     private var transport: some View {
-        HStack(spacing: 14) {
-            Button { store.seek(to: 0) } label: { Image(systemName: "backward.end.fill") }
-            Button { store.step(frames: -1) } label: { Image(systemName: "backward.frame.fill") }
-            Button { store.togglePlay() } label: {
-                Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title3)
+        ZStack {
+            HStack(spacing: 6) {
+                Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
+                    .font(.system(.callout, design: .monospaced))
+                    .monospacedDigit()
+                Text("/ \(Format.timecode(store.duration, fps: store.project.canvas.fps))")
+                    .font(.system(.caption, design: .monospaced))
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+
+                if store.isBuilding {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.leading, 4)
+                }
+
+                Spacer()
+
+                recordingControl
             }
-            Button { store.step(frames: 1) } label: { Image(systemName: "forward.frame.fill") }
-            Button { store.seek(to: store.outputEnd) } label: { Image(systemName: "forward.end.fill") }
 
-            Divider().frame(height: 16)
+            HStack(spacing: 12) {
+                Group {
+                    Button { store.seek(to: 0) } label: {
+                        Image(systemName: "backward.end.fill")
+                    }
+                    .help("先頭へ")
+                    Button { store.step(frames: -1) } label: {
+                        Image(systemName: "backward.frame.fill")
+                    }
+                    .help("1 フレーム戻る (←)")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .opacity(isTransportHovered ? 1 : 0)
+                .allowsHitTesting(isTransportHovered)
 
-            Text(Format.timecode(store.currentTime, fps: store.project.canvas.fps))
-                .font(.system(.callout, design: .monospaced))
+                Button { store.togglePlay() } label: {
+                    Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 15))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
+                }
+                .help("再生 / 一時停止 (Space)")
 
-            if store.isBuilding {
-                ProgressView().controlSize(.small)
+                Group {
+                    Button { store.step(frames: 1) } label: {
+                        Image(systemName: "forward.frame.fill")
+                    }
+                    .help("1 フレーム進む (→)")
+                    Button { store.seek(to: store.outputEnd) } label: {
+                        Image(systemName: "forward.end.fill")
+                    }
+                    .help("末尾へ")
+                }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .opacity(isTransportHovered ? 1 : 0)
+                .allowsHitTesting(isTransportHovered)
             }
-
-            Spacer()
-
-            recordingControl
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, 12)
-        .frame(height: 36)
+        .frame(height: 34)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            withAnimation(.easeInOut(duration: 0.14)) {
+                isTransportHovered = inside
+            }
+        }
     }
 
     private var recordingControl: some View {
@@ -203,16 +291,25 @@ struct ContentView: View {
             if recorder.isRecording {
                 LevelMeter(level: recorder.level)
                     .frame(width: 60, height: 8)
+                Button {
+                    toggleRecording()
+                } label: {
+                    Label("停止", systemImage: "stop.circle.fill")
+                        .foregroundStyle(Color.red)
+                }
+                .labelStyle(.titleAndIcon)
+                .help("録音を停止")
+            } else {
+                Button {
+                    toggleRecording()
+                } label: {
+                    Image(systemName: "mic")
+                        .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .help("マイクから録音してタイムラインに置く")
             }
-            Button {
-                toggleRecording()
-            } label: {
-                Label(recorder.isRecording ? "停止" : "録音",
-                      systemImage: recorder.isRecording ? "stop.circle.fill" : "mic.circle")
-                    .foregroundStyle(recorder.isRecording ? Color.red : Color.primary)
-            }
-            .labelStyle(.titleAndIcon)
-            .help("マイクから録音してタイムラインに置く")
         }
     }
 
@@ -253,23 +350,11 @@ struct ContentView: View {
             .help("素材とテンプレートのパネルを開閉 (⌘1)")
             .keyboardShortcut("1", modifiers: .command)
         }
-        ToolbarItem(placement: .navigation) {
-            Button { store.openProject() } label: { Label("開く", systemImage: "folder") }
-        }
-        ToolbarItem {
-            Button { store.save() } label: { Label("保存", systemImage: "square.and.arrow.down") }
-        }
-        ToolbarItem {
-            if store.isCuttingSilence {
-                ProgressView().controlSize(.small)
-            } else {
-                Menu {
-                    SilenceCutMenuItems(store: store)
-                } label: {
-                    Label("無音カット", systemImage: "waveform.badge.minus")
-                }
-                .help("喋っていない間を見つけて、全トラックから抜いて詰める")
-                .disabled(!store.canCutSilence)
+        if store.isCuttingSilence {
+            ToolbarItem {
+                ProgressView()
+                    .controlSize(.small)
+                    .help("無音を詰めています")
             }
         }
         ToolbarItem {
@@ -280,19 +365,18 @@ struct ContentView: View {
                     .controlSize(.small)
                     .help("音声を書き出しています")
             } else {
-                Button { showExport = true } label: {
+                Button { session.showExport = true } label: {
                     Label("書き出し", systemImage: "square.and.arrow.up")
                 }
+                .help("動画を書き出す (⌘E)")
                 .disabled(store.duration <= 0)
             }
         }
         ToolbarItem {
-            Button {
-                withAnimation(.easeInOut(duration: 0.16)) { showInspector.toggle() }
-            } label: {
+            Button(action: toggleInspector) {
                 Label("インスペクタ", systemImage: "sidebar.trailing")
             }
-            .help("右のパネルを開閉 (⌘2)")
+            .help("インスペクタを開閉 (⌘2)")
             .keyboardShortcut("2", modifiers: .command)
         }
     }
