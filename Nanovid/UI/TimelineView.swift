@@ -11,7 +11,17 @@ struct TimelineView: View {
     static let headerWidth: CGFloat = 148
     /// 見出し行の高さ。字幕タブ（TextClipsPane）とそろえる。
     static let toolbarHeight: CGFloat = 30
-    static let laneHeight: CGFloat = 40
+    /// クリップのラベルとアイコンの大きさ。種類は色ではなくアイコンで見分けるので、
+    /// 読める大きさにしておく。
+    static let clipFontSize: CGFloat = 12
+    static let clipIconSize: CGFloat = 12
+    /// トラックの高さ。クリップの中身は 1 行のラベル（＋アイコン）だけなので、
+    /// その行の高さに上下の余白を足したぶんで足りる。波形や絵は描かない。
+    static let laneHeight: CGFloat = {
+        let line = NSLayoutManager().defaultLineHeight(for: .systemFont(ofSize: clipFontSize))
+        return ceil(line) + 2 * clipPadding
+    }()
+    static let clipPadding: CGFloat = 5
     static let laneGap: CGFloat = 2
     static let rulerHeight: CGFloat = 18
     /// 横スクロールバーの行の高さ。
@@ -402,7 +412,7 @@ struct TimelineView: View {
 
     private func laneBackground(_ track: Track) -> Color {
         if dropTargetTrack == track.id { return Color.accentColor.opacity(0.18) }
-        return Color(nsColor: .controlBackgroundColor).opacity(track.isHidden ? 0.4 : 0.85)
+        return TimelinePalette.lane.opacity(track.isHidden ? 0.5 : 1)
     }
 
     // MARK: - 右クリックメニュー
@@ -1378,6 +1388,29 @@ private struct TrackHeaderView: View {
 
 // MARK: - クリップ
 
+/// タイムラインの色。種類で色分けはせず、トラックの地をグレーにして、
+/// クリップはその上に白（ダークではほぼ黒）の塗り＋はっきりした枠、文字は
+/// いちばん強い色で載せる。系統色（textBackgroundColor など）はダークで地と
+/// クリップがほぼ同じ暗さになり、枠でしか分かれないので、ここで明暗を決める。
+enum TimelinePalette {
+    private static func dynamic(light: CGFloat, dark: CGFloat) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let isDark = appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            return NSColor(white: isDark ? dark : light, alpha: 1)
+        })
+    }
+
+    /// トラックの地。
+    static let lane = dynamic(light: 0.62, dark: 0.30)
+    /// クリップの塗り。
+    static let clipFill = dynamic(light: 1.0, dark: 0.06)
+    /// クリップの枠。
+    static let clipBorder = dynamic(light: 0.20, dark: 0.85)
+    /// クリップのラベルとアイコン。
+    static let clipText = dynamic(light: 0.0, dark: 1.0)
+}
+
+
 private struct ClipView: View {
     @Bindable var store: EditorStore
     let clip: Clip
@@ -1386,29 +1419,32 @@ private struct ClipView: View {
     let isDragging: Bool
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 5)
-                .fill(fill)
+        ZStack(alignment: .leading) {
+            // 種類によらず同じ見た目。背景（レーン）とはっきり分かれる塗りと枠に、
+            // 文字はいちばん強い色で載せる。ライトなら白地に黒、ダークなら黒地に白。
+            RoundedRectangle(cornerRadius: 4)
+                .fill(TimelinePalette.clipFill)
             if clip.fade.inDuration > 0 || clip.fade.outDuration > 0 {
                 fadeOverlay
             }
-            HStack(spacing: 4) {
-                Image(systemName: icon).font(.system(size: 9))
-                    .foregroundStyle(.secondary)
-                Text(label).font(.system(size: 10)).lineLimit(1)
-                    .foregroundStyle(.primary)
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: TimelineView.clipIconSize, weight: .medium))
+                Text(label)
+                    .font(.system(size: TimelineView.clipFontSize, weight: .medium))
+                    .lineLimit(1)
             }
-            .padding(.horizontal, 6)
-            .padding(.top, 4)
+            .foregroundStyle(TimelinePalette.clipText)
+            .padding(.horizontal, 7)
         }
         .overlay(
             // 色はアクセントだけ。選んだクリップを見分けるのに使う。
-            RoundedRectangle(cornerRadius: 5)
-                .strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.16),
-                              lineWidth: isSelected ? 2 : 1)
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(isSelected ? Color.accentColor : TimelinePalette.clipBorder,
+                              lineWidth: isSelected ? 2.5 : 1)
         )
         .opacity(isDragging ? 0.75 : 1)
-        .contentShape(RoundedRectangle(cornerRadius: 5))
+        .contentShape(RoundedRectangle(cornerRadius: 4))
         .onTapGesture {
             store.select(clipID: clip.id, extend: NSEvent.modifierFlags.contains(.command))
         }
@@ -1456,31 +1492,23 @@ private struct ClipView: View {
             let outW = CGFloat(clip.fade.outDuration / total) * w
             ZStack(alignment: .leading) {
                 if inW > 1 {
-                    LinearGradient(colors: [.black.opacity(0.35), .clear],
+                    LinearGradient(colors: [Color.primary.opacity(0.3), .clear],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: inW)
                 }
                 if outW > 1 {
-                    LinearGradient(colors: [.clear, .black.opacity(0.35)],
+                    LinearGradient(colors: [.clear, Color.primary.opacity(0.3)],
                                    startPoint: .leading, endPoint: .trailing)
                         .frame(width: outW)
                         .offset(x: w - outW)
                 }
             }
         }
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
         .allowsHitTesting(false)
     }
 
     private var isText: Bool { clip.content.textInstance != nil }
-
-    /// 種類ごとの色分けはしない。グレーの濃さとアイコンで見分ける
-    /// （テロップがいちばん濃く、音声がいちばん薄い）。primary の濃さなので
-    /// ライトでもダークでも同じ並びになる。
-    private var fill: Color {
-        let base: Double = isText ? 0.26 : (track.kind == .audio ? 0.10 : 0.17)
-        return Color.primary.opacity(isSelected ? base + 0.06 : base)
-    }
 
     private var icon: String {
         if isText { return "textformat" }
