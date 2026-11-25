@@ -91,9 +91,12 @@ struct ContentView: View {
     /// 起動引数で画面の状態を作る。
     ///
     ///   --shot-media <ファイル>...   取り込んでタイムラインに並べる（-- で始まる引数まで）
-    ///   --shot-state <状態>          select-text / select-media / select-audio / export / library / text-tab
+    ///   --shot-state <状態>[,<状態>…] select-text / select-media / select-audio / export / library / text-tab /
+    ///                               seek:<秒> / select-at:<秒> / lanes:<本> / pps:<pt> / silence-cut / silence-menu / template-editor
     ///   --shot-size <幅>x<高さ>      窓の大きさ
     ///   --shot-appearance light|dark 外観（システムの設定を変えずに、このアプリだけ）
+    ///   --shot-png <ディレクトリ>     状態を作ったあと、窓を 2 倍の画素で描いて書き出す（ShotCapture）
+    ///   --shot-offscreen             窓を画面の外に置く（--shot-png と使う）
     @MainActor
     private func applyShotState() async {
         let args = CommandLine.arguments
@@ -104,7 +107,9 @@ struct ContentView: View {
         if let i = args.firstIndex(of: "--shot-size"), args.count > i + 1 {
             let parts = args[i + 1].split(separator: "x").compactMap { Double($0) }
             if parts.count == 2, let window = NSApp.windows.first(where: { $0.isVisible }) {
-                window.setFrame(NSRect(x: 80, y: 80, width: parts[0], height: parts[1]), display: true)
+                // --shot-offscreen なら画面の外に置く（--shot-png で描くので、画面に出さなくてよい）。
+                let origin = args.contains("--shot-offscreen") ? -20000.0 : 80
+                window.setFrame(NSRect(x: origin, y: origin, width: parts[0], height: parts[1]), display: true)
             }
         }
         if let i = args.firstIndex(of: "--shot-media") {
@@ -126,8 +131,100 @@ struct ContentView: View {
         }
         guard let i = args.firstIndex(of: "--shot-state"), args.count > i + 1 else { return }
         try? await Task.sleep(for: .milliseconds(500))
+        // カンマで区切って、いくつかの状態を順に重ねられる（例: silence-cut,select-at:1）。
+        let states = args[i + 1].split(separator: ",").map(String.init)
+        for state in states where state != "silence-menu" {
+            await applyShotState(state)
+        }
+        if let j = args.firstIndex(of: "--shot-png"), args.count > j + 1 {
+            try? await Task.sleep(for: .milliseconds(1500))
+            await ShotCapture.write(to: URL(fileURLWithPath: args[j + 1]), store: store)
+        }
+        // メニューは開くと閉じるまで戻らないので、窓を描き終えてから最後に開く。
+        if states.contains("silence-menu") {
+            await applyShotState("silence-menu")
+        }
+    }
+
+    @MainActor
+    private func applyShotState(_ state: String) async {
         let clips = store.project.tracks.flatMap(\.clips)
-        switch args[i + 1] {
+        let parts = state.split(separator: ":", maxSplits: 1).map(String.init)
+        let value = parts.count > 1 ? Double(parts[1]) : nil
+        switch parts[0] {
+        case "seek":
+            if let value { store.seek(to: value) }
+        case "lanes":
+            // 下段の高さを、トラック n 本ぶんにする。
+            if let value { bottomHeight = TimelineView.fittingHeight(lanes: Int(value)) }
+        case "pps":
+            // タイムラインの拡大率（1 秒あたりの pt）。
+            if let value { store.pixelsPerSecond = value }
+        case "select-at":
+            // その時刻にかかる文字のクリップを選ぶ（並びの後ろのトラックを優先）。
+            guard let value else { break }
+            let hit = store.project.tracks.reversed().lazy.flatMap(\.clips).first { clip in
+                if case .text = clip.content { clip.start <= value && value < clip.start + clip.duration } else { false }
+            }
+            if let hit {
+                store.selectedClipIDs = [hit.id]
+                store.seek(to: value)
+                showInspector = true
+            }
+        case "silence-cut":
+            _ = try? await store.cutSilence(options: .standard)
+            try? await Task.sleep(for: .milliseconds(500))
+        case "silence-menu":
+            // 「編集操作 > 無音を詰める」の本物の項目を、タイムラインの見出し行の右に出す。
+            // 開いたメニューは閉じずに残る（撮り終えたらアプリごと終わらせる）。
+            // --shot-png では窓を 2 倍の画素で描くので、メニューも文字を 2 倍にして
+            // 等倍で撮り、そのまま重ねられるようにする（--shot-menu-scale 2）。
+            guard let window = NSApp.windows.first(where: { $0.isVisible }),
+                  let content = window.contentView,
+                  let actions = NSApp.mainMenu?.items.first(where: { $0.title == L("編集操作") })?.submenu,
+                  let silence = actions.items.first(where: { $0.title == L("無音を詰める") })?.submenu
+            else { break }
+            // アプリを前に出さない（ユーザーの入力を奪わない）ので、本物の項目は「使えない」灰色で出る。
+            // 同じ題の項目を、使える状態で並べ直して出す。
+            let menu = NSMenu()
+            for item in silence.items {
+                let copy = NSMenuItem(title: item.title, action: #selector(ShotMenuTarget.noop), keyEquivalent: "")
+                copy.target = ShotMenuTarget.shared
+                menu.addItem(copy)
+            }
+            if let k = CommandLine.arguments.firstIndex(of: "--shot-menu-scale"),
+               CommandLine.arguments.count > k + 1, let scale = Double(CommandLine.arguments[k + 1]) {
+                menu.font = NSFont.menuFont(ofSize: NSFont.systemFontSize * scale)
+            }
+            // メニューは半透明で後ろが透けるので、無地の下敷きの窓の上で開く。
+            // 撮ったメニューを、2 倍で描いた窓の「…」の下に重ねる。
+            // マウスのポインタが重なると項目が選ばれた色になるので、ポインタから遠い隅に出す。
+            let mouse = NSEvent.mouseLocation
+            let screen = (NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main)?.visibleFrame
+                ?? window.frame
+            let backdrop = NSWindow(
+                contentRect: NSRect(x: mouse.x < screen.midX ? screen.maxX - 440 : screen.minX + 20,
+                                    y: mouse.y < screen.midY ? screen.maxY - 240 : screen.minY + 20,
+                                    width: 420, height: 220),
+                styleMask: .borderless, backing: .buffered, defer: false)
+            backdrop.backgroundColor = NSColor(white: 0.97, alpha: 1)
+            backdrop.isReleasedWhenClosed = false
+            backdrop.orderFront(nil)
+            ShotMenuTarget.backdrop = backdrop
+            guard let base = backdrop.contentView else { break }
+            let point = NSPoint(x: 40, y: base.isFlipped ? 40 : base.bounds.height - 40)
+            DispatchQueue.main.async {
+                menu.popUp(positioning: nil, at: point, in: base)
+            }
+        case "template-editor":
+            showLibrary = true
+            try? await Task.sleep(for: .milliseconds(300))
+            let selected = clips.first { store.selectedClipIDs.contains($0.id) }
+            if case .text(let instance)? = selected?.content {
+                editingTemplateID = instance.templateID
+            } else {
+                editingTemplateID = store.project.textTemplates.last?.id
+            }
         case "inspector":
             showInspector = true
         case "select-text":

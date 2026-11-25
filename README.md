@@ -378,9 +378,21 @@ Scripts/check-no-mcp.sh path/to/Nanovid.app
 # 指定したアプリのウィンドウだけを撮る（画面収録の許可）
 swift Scripts/window-shot.swift nanovid /tmp/shot.png
 
+# Mac App Store のスクリーンショット（2880×1800、ja・en 各 6 枚）を作り直す
+Scripts/screenshots/run.sh ~/Desktop/appstore-screenshots/nanovid-<版>
+
 # 文言カタログと Swift 側のずれを見る（test.sh と CI から自動で走る）
 Scripts/check-localization.py
 ```
+
+ストアのスクリーンショットは `Scripts/screenshots/run.sh` で作る。デモ書類（絵・ナレーション・
+BGM）から作り、Debug ビルドを撮影用の起動引数（`--shot-state` ほか。`ContentView` の
+`applyShotState`）で起動して、アプリ自身に窓を 2 倍の画素で描かせる（`--shot-png`、
+`ShotCapture`）。画面の倍率によらず 2560×1600 になり、窓は画面の外に置く。プレビューの
+映像（AVPlayerLayer）はこの描き方では写らないので、その時刻の絵を FrameRenderer で
+描いて重ねる。本物のクリックやキーは送らず、アプリも前に出さないので、窓は
+「使っていない窓」の見た目になる（選んだ項目やボタンは青くならない。信号機と
+ツールバーの下地だけ合成で塗る）。02 のメニューだけは画面に数秒出して外から撮る。
 
 以前はマウス操作を合成してドラッグの追従を確かめるスクリプトも置いていたが、
 消した。実機の入力状態（押されっぱなしの修飾キーやボタン）やウィンドウの
